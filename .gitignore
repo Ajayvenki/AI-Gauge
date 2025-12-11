@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 AI-Gauge.code-workspace
+/Users/ajayvenkatesan/AI-Gauge/AI-Gauge/AI-Gauge.code-workspace
 # C extensions
 *.so
 
