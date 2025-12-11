@@ -2,7 +2,7 @@
 __pycache__/
 *.py[codz]
 *$py.class
-AI-Gaude.code-workspace
+AI-Gauge.code-workspace
 # C extensions
 *.so
 
