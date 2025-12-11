@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../AI Gauge/model_registry"
+		},
+		{
+			"path": "../../AI Gauge/venv"
+		}
+	],
+	"settings": {}
+}
