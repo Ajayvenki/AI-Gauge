@@ -1,152 +1,171 @@
-"""AI Gauge - bad example fixture
+"""AI Gauge — Developer's Code (Poor Example)
 
-One "reasonable-looking" GenAI call that *appears* important to a developer,
-but is actually a small task from an LLM perspective.
+This simulates a typical developer's code that:
+  • Uses an oversized frontier model (GPT-5.2) for what appears to be a complex task
+  • The task LOOKS sophisticated (enterprise-grade prompt engineering) but is actually trivial
+  • Demonstrates the problem: developers can't easily assess if their model choice is efficient
 
-This script ONLY:
-- makes a call with a large model (gpt-5)
-- prints a metadata payload for our future IDE plugin
+The decision module (running in the background) will intercept and analyze this.
 
-Stop here. No decision agent, no suggestions.
+Run:
+    python main.py
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
+from datetime import datetime
+from typing import Any, Dict
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# ---------------------------------------------------------------------------
+# Configuration — Appears sophisticated, actually simple task
+# ---------------------------------------------------------------------------
 
-def run() -> None:
-    system_prompt = (
-        "You are an expert product copy editor for a developer tools company. "
-        "Be precise and concise."
-    )
+# Enterprise-grade system prompt (looks important!)
+SYSTEM_PROMPT = """\
+You are an elite AI communications specialist at a Fortune 500 developer tools company.
+Your expertise spans technical writing, UX copy, brand voice consistency, and conversion optimization.
+Apply the following frameworks:
+- AIDA (Attention, Interest, Desire, Action) for engagement
+- Plain language principles (Flesch-Kincaid Grade 8 or below)
+- Developer empathy mapping for audience resonance
+Maintain strict adherence to brand guidelines while maximizing clarity and impact.
+"""
 
-    # Looks important/complex to the developer; output is tiny.
-    context = {
-        "product": "AI Gauge",
-        "surface": "VS Code extension onboarding panel",
-        "audience": "software engineers",
-        "tone": "professional",
-        "constraints": {
-            "max_words": 30,
-            "avoid": ["hype", "buzzwords", "exclamation marks"],
-        },
-    }
+# Detailed context object (seems complex!)
+CONTEXT = {
+    "company": {
+        "name": "AI Gauge",
+        "industry": "Developer Tools",
+        "brand_voice": "Professional, empathetic, technically precise",
+        "target_market": "B2B SaaS",
+    },
+    "project": {
+        "type": "VS Code Extension",
+        "surface": "Onboarding panel - first-run experience",
+        "goal": "User activation and feature discovery",
+    },
+    "audience": {
+        "primary": "Software engineers (mid to senior level)",
+        "secondary": "Engineering managers, DevOps practitioners",
+        "pain_points": ["LLM cost visibility", "Environmental impact awareness", "API optimization"],
+    },
+    "constraints": {
+        "max_words": 30,
+        "reading_time_seconds": 5,
+        "avoid": ["hype", "buzzwords", "exclamation marks", "jargon"],
+        "required_elements": ["value proposition", "action hint"],
+    },
+    "success_metrics": {
+        "target_engagement_rate": 0.75,
+        "target_feature_discovery": 0.60,
+    },
+}
 
-    user_prompt = (
-        "Rewrite this onboarding tip to be clearer:\n"
-        "'This extension helps you track LLM usage for greener prompts and lower costs.'"
-    )
+# The actual task (trivially simple - just rewrite one sentence!)
+USER_PROMPT = """\
+Rewrite the following onboarding tooltip to improve clarity and user engagement:
 
-    instructions = "Return exactly ONE sentence under 18 words. No explanation."
+ORIGINAL: "This extension helps you track LLM usage for greener prompts and lower costs."
 
-    # Included so the plugin can extract tool metadata.
-    # (We are not executing tools here.)
-    tools = [
-        {
-            "type": "function",
-            "name": "noop",
-            "description": "Placeholder tool definition.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        }
-    ]
+Apply all brand guidelines, audience insights, and engagement frameworks from the context.
+Deliver a single, refined sentence optimized for the specified constraints.
+"""
 
-    model_planned = "gpt-5"
-    model_config = {"temperature": 0.2, "max_tokens": 256, "top_p": 1.0}
+INSTRUCTIONS = "Return exactly ONE sentence. No explanation, no alternatives, no preamble."
 
-    # Placeholder only. We will compute later via decision agent.
-    cost_estimated_usd = 0.02
-    carbon_estimated_g = 0.3
+# Oversized model for a trivial task — the "bad" choice
+MODEL_ID = "gpt-5.2"
+MODEL_CONFIG = {
+    "temperature": 0.3,
+    "max_tokens": 100,
+    "top_p": 0.95,
+}
 
-    metadata = {
-        "system_prompt": system_prompt,
-        "user_prompt": user_prompt,
-        "context": context,
-        "instructions": instructions,
-        "tools": tools,
-        "model_planned": model_planned,
-        "model_config": model_config,
-        "cost_estimated_usd": cost_estimated_usd,
-        "carbon_estimated_g": carbon_estimated_g,
-    }
+# ---------------------------------------------------------------------------
+# Main execution
+# ---------------------------------------------------------------------------
 
-    # Load API key from environment (dotenv is called at program start)
+
+def invoke_llm() -> Dict[str, Any]:
+    """Invoke the LLM with the configured prompt. Returns metadata + response."""
+    load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
-    client = OpenAI(api_key=api_key) if api_key else None
 
-    # Build a single prompt string for the Responses API input
-    prompt_text = (
-        f"System: {system_prompt}\n"
-        f"Context: {json.dumps(context)}\n"
-        f"Instructions: {instructions}\n"
-        f"Task: {user_prompt}"
+    # Build the full prompt
+    full_user_content = (
+        f"## Context\n```json\n{json.dumps(CONTEXT, indent=2)}\n```\n\n"
+        f"## Task\n{USER_PROMPT}\n\n"
+        f"## Output Requirements\n{INSTRUCTIONS}"
     )
 
-    llm_output = None
+    # Metadata for decision module to analyze
+    metadata = {
+        "timestamp": datetime.now().isoformat(),
+        "model_id": MODEL_ID,
+        "model_config": MODEL_CONFIG,
+        "system_prompt": SYSTEM_PROMPT,
+        "user_prompt": USER_PROMPT,
+        "context": CONTEXT,
+        "instructions": INSTRUCTIONS,
+        "full_prompt_preview": full_user_content[:500] + "..." if len(full_user_content) > 500 else full_user_content,
+    }
 
-    if client is not None:
+    # Invoke the model
+    start_time = time.time()
+
+    if not api_key:
+        # Mock response for demo
+        llm_output = "Monitor your AI costs and carbon footprint directly in VS Code."
+        metadata["_mock"] = True
+    else:
         try:
+            client = OpenAI(api_key=api_key)
             response = client.responses.create(
-                model=model_planned,
-                input=prompt_text,
-                temperature=model_config["temperature"],
-                max_tokens=model_config["max_tokens"],
+                model=MODEL_ID,
+                input=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": full_user_content},
+                ],
             )
+            llm_output = response.output_text or "(empty response)"
+        except Exception as e:
+            llm_output = f"(error) {e}"
+            metadata["_error"] = str(e)
 
-            # Responses can surface text in a few places depending on SDK version.
-            # Try common accessors safely.
-            if hasattr(response, "output_text") and response.output_text:
-                llm_output = response.output_text
-            else:
-                # Try nested output content
-                try:
-                    # new SDK shapes: response.output -> list(dict)
-                    out = response.output
-                    if isinstance(out, (list, tuple)) and len(out) > 0:
-                        first = out[0]
-                        # content can be list of dicts with 'text' or 'type' keys
-                        content = first.get("content") if isinstance(first, dict) else None
-                        if isinstance(content, (list, tuple)) and len(content) > 0:
-                            piece = content[0]
-                            if isinstance(piece, dict) and "text" in piece:
-                                llm_output = piece["text"]
-                            elif isinstance(piece, str):
-                                llm_output = piece
-                except Exception:
-                    llm_output = None
+    elapsed_ms = (time.time() - start_time) * 1000
 
-            # As a last resort try choices (compatibility layer)
-            if not llm_output and hasattr(response, "choices"):
-                try:
-                    c = response.choices[0]
-                    # Some SDKs put message content: c.message.content
-                    if hasattr(c, "message") and getattr(c.message, "content", None):
-                        llm_output = c.message.content
-                    elif getattr(c, "text", None):
-                        llm_output = c.text
-                except Exception:
-                    pass
-
-        except Exception as exc:  # pragma: no cover - runtime network errors
-            # If the API fails (bad key, network), fall back to a mocked output
-            llm_output = None
-            print(f"Warning: responses.create failed: {exc}")
-
-    # If there's no API key or the call failed, provide a deterministic mock output.
-    if not llm_output:
-        # Produce a concise, single-sentence output consistent with instructions
-        llm_output = (
-            "Track LLM usage in VS Code to reduce carbon and cost with simple metrics."
-        )
-
+    # Add response metadata
     metadata["llm_output"] = llm_output
-    print(json.dumps(metadata, indent=2))
+    metadata["response_time_ms"] = round(elapsed_ms, 2)
+
+    return metadata
+
+
+def main() -> None:
+    """Run the 'poor example' script."""
+    print("=" * 70)
+    print("🔴 DEVELOPER CODE — Using GPT-5.2 for simple copy editing")
+    print("=" * 70)
+    print()
+
+    result = invoke_llm()
+
+    print(f"Model: {result['model_id']}")
+    print(f"Response time: {result['response_time_ms']}ms")
+    print(f"\n📝 Output:\n   \"{result['llm_output']}\"")
+    print()
+    print("-" * 70)
+    print("Full metadata (for decision module):")
+    print("-" * 70)
+    print(json.dumps(result, indent=2, default=str))
 
 
 if __name__ == "__main__":
-    load_dotenv()
-    run()
+    main()
+
