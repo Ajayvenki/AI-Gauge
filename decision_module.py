@@ -63,14 +63,18 @@ class AgentState(TypedDict):
     original_model: str
     original_prompt: str
     task_description: str
+    system_prompt: str  # NEW: System prompt if any
+    context: Dict[str, Any]  # NEW: Context object if any
+    tools: List[str]  # NEW: Tools being used
     
-    # Agent 1 output: Metadata
+    # Agent 1 output: Rich Metadata (LLM-analyzed)
     metadata: Dict[str, Any]
     
     # Agent 2 output: Research findings
     current_model_info: Dict[str, Any]
     alternative_models: List[Dict[str, Any]]
     carbon_analysis: Dict[str, Any]
+    gpt_analysis: Optional[str]  # NEW: GPT-5.2 analysis
     
     # Agent 3 output: Final recommendation
     recommendation: Dict[str, Any]
@@ -89,13 +93,16 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def calculate_carbon_cost(tokens: int, carbon_factor: float) -> float:
+def calculate_carbon_cost(tokens: int, carbon_factor: float) -> Optional[float]:
     """
     Calculate carbon cost in grams CO2.
-    Formula: Tokens × Carbon Factor × Energy per Token × Grid Intensity
+    Returns None if carbon_factor is unknown (0 or negative).
     
+    Formula: Tokens × Carbon Factor × Energy per Token × Grid Intensity
     Simplified: tokens * carbon_factor * 0.0001 (grams CO2)
     """
+    if tokens <= 0 or carbon_factor <= 0:
+        return None  # Unknown carbon data
     return tokens * carbon_factor * 0.0001
 
 
@@ -110,60 +117,148 @@ def model_card_to_dict(card) -> Dict[str, Any]:
     return asdict(card)
 
 
-def classify_task_complexity(prompt: str, task_description: str) -> str:
+def extract_task_metadata_with_llm(
+    system_prompt: str,
+    user_prompt: str,
+    model_id: str,
+    context: Optional[Dict[str, Any]] = None,
+    tools: Optional[List[str]] = None
+) -> Dict[str, Any]:
     """
-    Classify task complexity based on prompt characteristics.
-    Returns: 'trivial', 'simple', 'moderate', 'complex', 'expert'
+    Use GPT-5.2 to analyze the task and extract rich metadata.
+    This replaces the keyword-based classification with intelligent analysis.
+    
+    Returns structured metadata about:
+    - Task intention and goal
+    - Estimated complexity (with reasoning)
+    - Required capabilities (vision, reasoning, long context, etc.)
+    - Accuracy/quality requirements
+    - Estimated tokens needed
+    - Whether the chosen model is appropriate
     """
-    combined = (prompt + " " + task_description).lower()
-    
-    # Trivial: Simple formatting, basic edits, greetings
-    trivial_keywords = ['fix typo', 'capitalize', 'hello', 'hi', 'thanks', 
-                        'format', 'spell check', 'grammar', 'punctuation']
-    
-    # Simple: Basic Q&A, summarization, translation
-    simple_keywords = ['summarize', 'translate', 'explain simply', 'list',
-                       'what is', 'define', 'short answer']
-    
-    # Moderate: Analysis, comparison, structured output
-    moderate_keywords = ['analyze', 'compare', 'evaluate', 'review',
-                         'pros and cons', 'structured', 'json output']
-    
-    # Complex: Multi-step reasoning, code generation, research
-    complex_keywords = ['implement', 'code', 'algorithm', 'research',
-                        'multi-step', 'reasoning', 'architecture', 'design']
-    
-    # Expert: Advanced reasoning, novel solutions, specialized domains
-    expert_keywords = ['novel', 'cutting-edge', 'phd-level', 'prove',
-                       'mathematical proof', 'optimize algorithm', 'agentic']
-    
-    if any(kw in combined for kw in trivial_keywords):
-        return 'trivial'
-    elif any(kw in combined for kw in expert_keywords):
-        return 'expert'
-    elif any(kw in combined for kw in complex_keywords):
-        return 'complex'
-    elif any(kw in combined for kw in moderate_keywords):
-        return 'moderate'
-    elif any(kw in combined for kw in simple_keywords):
-        return 'simple'
-    else:
-        # Default to moderate for unknown patterns
-        return 'moderate'
+    analysis_prompt = f"""Analyze this LLM API call and extract structured metadata.
+
+## System Prompt
+{system_prompt[:2000] if system_prompt else "(none)"}
+
+## User Prompt
+{user_prompt[:2000]}
+
+## Model Selected by Developer
+{model_id}
+
+## Context/Tools Provided
+{json.dumps(context, indent=2)[:1000] if context else "(none)"}
+Tools: {', '.join(tools) if tools else "(none)"}
+
+---
+
+Analyze the above and return a JSON object with these fields:
+{{
+  "task_intention": "One sentence describing what the task is trying to accomplish",
+  "task_category": "One of: text_generation, code_generation, analysis, summarization, translation, classification, extraction, creative_writing, question_answering, agentic_workflow, multimodal, other",
+  "actual_complexity": "One of: trivial, simple, moderate, complex, expert - based on what the task ACTUALLY requires, not how it appears",
+  "complexity_reasoning": "Brief explanation of why you classified it at this complexity level",
+  "requires_vision": true/false,
+  "requires_audio": true/false,
+  "requires_reasoning": true/false - whether extended thinking/chain-of-thought is needed,
+  "requires_long_context": true/false - whether >32k tokens input is likely needed,
+  "estimated_output_tokens": number - rough estimate of tokens needed for good output,
+  "accuracy_requirement": "One of: low, medium, high, critical - how important is correctness",
+  "latency_sensitivity": "One of: real_time, fast, relaxed, batch - how time-sensitive",
+  "model_appropriate": true/false - is {model_id} a good fit for this task,
+  "model_assessment": "Brief assessment of whether the chosen model is overkill, appropriate, or underpowered",
+  "recommended_tier": "One of: budget, standard, premium, frontier - minimum tier needed"
+}}
+
+Return ONLY the JSON object, no other text."""
+
+    try:
+        response = client.responses.create(
+            model="gpt-5.2",
+            input=analysis_prompt,
+            max_output_tokens=800
+        )
+        
+        # Parse JSON from response
+        response_text = response.output_text.strip()
+        # Remove markdown code fences if present
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+        
+        metadata = json.loads(response_text)
+        return metadata
+    except Exception as e:
+        # Fallback to basic extraction if LLM fails
+        return {
+            "task_intention": "unknown",
+            "task_category": "other",
+            "actual_complexity": "moderate",
+            "complexity_reasoning": f"LLM analysis failed: {str(e)[:50]}",
+            "requires_vision": False,
+            "requires_audio": False,
+            "requires_reasoning": False,
+            "requires_long_context": False,
+            "estimated_output_tokens": 500,
+            "accuracy_requirement": "medium",
+            "latency_sensitivity": "relaxed",
+            "model_appropriate": True,
+            "model_assessment": "Unable to assess",
+            "recommended_tier": "standard"
+        }
 
 
-def get_recommended_models_for_complexity(complexity: str) -> List[str]:
+def get_models_for_tier(tier: str, requires_vision: bool = False, requires_reasoning: bool = False) -> List[str]:
     """
-    Return list of appropriate model IDs for given complexity level.
+    Return model IDs appropriate for the given tier.
+    Tiers: budget, standard, premium, frontier
     """
-    recommendations = {
-        'trivial': ['gpt-4o-mini', 'gpt-4.1-mini', 'claude-3.5-haiku', 'gemini-2.0-flash'],
-        'simple': ['gpt-4o-mini', 'gpt-4.1-nano', 'claude-3.5-haiku', 'gemini-2.5-flash'],
-        'moderate': ['gpt-4o', 'gpt-4.1', 'claude-sonnet-4', 'gemini-2.5-pro'],
-        'complex': ['gpt-4.1', 'gpt-5-mini', 'claude-sonnet-4', 'gemini-2.5-pro'],
-        'expert': ['gpt-5', 'gpt-5.2', 'claude-opus-4', 'gemini-3-pro', 'o3', 'o4-mini']
+    all_models = {
+        'budget': [
+            'gpt-4o-mini', 'gpt-4.1-nano', 'gpt-3.5-turbo',
+            'claude-haiku-4-5-20251001', 'claude-3-5-haiku-20241022',
+            'gemini-2.0-flash-lite', 'gemini-2.5-flash-lite'
+        ],
+        'standard': [
+            'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1',
+            'claude-sonnet-4-5-20250929', 'claude-3-5-sonnet-20241022',
+            'gemini-2.5-flash', 'gemini-2.0-flash'
+        ],
+        'premium': [
+            'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'o4-mini',
+            'claude-sonnet-4-5-20250929',
+            'gemini-2.5-pro'
+        ],
+        'frontier': [
+            'gpt-5', 'gpt-5.2', 'gpt-5.2-pro', 'o3',
+            'claude-opus-4-5-20251101',
+            'gemini-3-pro-preview'
+        ]
     }
-    return recommendations.get(complexity, recommendations['moderate'])
+    
+    # Get models for this tier and below (frontier can use any)
+    tier_order = ['budget', 'standard', 'premium', 'frontier']
+    tier_idx = tier_order.index(tier) if tier in tier_order else 1
+    
+    candidates = []
+    for i in range(tier_idx + 1):
+        candidates.extend(all_models.get(tier_order[i], []))
+    
+    # Filter by capabilities if needed
+    filtered = []
+    for model_id in candidates:
+        card = get_model_card(model_id)
+        if card:
+            card_dict = model_card_to_dict(card)
+            if requires_vision and not card_dict.get('supports_vision', False):
+                continue
+            if requires_reasoning and not card_dict.get('supports_reasoning', False):
+                continue
+            filtered.append(model_id)
+    
+    return filtered if filtered else candidates
 
 
 # ============================================================================
@@ -175,41 +270,74 @@ def metadata_collector_agent(state: AgentState) -> AgentState:
     Agent 1: Metadata Collector
     
     Responsibilities:
-    - Extract model being used
-    - Estimate input/output tokens
-    - Classify task type and complexity
-    - Build structured metadata object
+    - Extract model, system prompt, user prompt
+    - Use GPT-5.2 to analyze task intention and requirements
+    - Build rich structured metadata (NOT keyword-based)
     """
-    print("\n🔍 [Agent 1: Metadata Collector] Analyzing request...")
+    print("\n🔍 [Agent 1: Metadata Collector] Analyzing request with GPT-5.2...")
     
     original_model = state.get('original_model', 'unknown')
     original_prompt = state.get('original_prompt', '')
     task_description = state.get('task_description', '')
+    system_prompt = state.get('system_prompt', '')
+    context = state.get('context', {})
+    tools = state.get('tools', [])
     
     # Estimate tokens
-    input_tokens = estimate_tokens(original_prompt)
-    # Assume output is roughly 50% of input for estimation
-    estimated_output_tokens = max(50, input_tokens // 2)
+    input_tokens = estimate_tokens(original_prompt + system_prompt)
     
-    # Classify complexity
-    complexity = classify_task_complexity(original_prompt, task_description)
+    # Use LLM to analyze task (replaces keyword-based classification)
+    print("   ├─ Invoking GPT-5.2 for intelligent task analysis...")
+    llm_analysis = extract_task_metadata_with_llm(
+        system_prompt=system_prompt,
+        user_prompt=original_prompt,
+        model_id=original_model,
+        context=context,
+        tools=tools
+    )
     
-    # Build metadata
+    # Build comprehensive metadata
     metadata = {
+        # Basic info
         'model_requested': original_model,
         'input_tokens': input_tokens,
-        'estimated_output_tokens': estimated_output_tokens,
-        'total_tokens': input_tokens + estimated_output_tokens,
-        'task_complexity': complexity,
+        'estimated_output_tokens': llm_analysis.get('estimated_output_tokens', 500),
+        'total_tokens': input_tokens + llm_analysis.get('estimated_output_tokens', 500),
+        
+        # LLM-analyzed task details
+        'task_intention': llm_analysis.get('task_intention', 'unknown'),
+        'task_category': llm_analysis.get('task_category', 'other'),
+        'actual_complexity': llm_analysis.get('actual_complexity', 'moderate'),
+        'complexity_reasoning': llm_analysis.get('complexity_reasoning', ''),
+        
+        # Required capabilities
+        'requires_vision': llm_analysis.get('requires_vision', False),
+        'requires_audio': llm_analysis.get('requires_audio', False),
+        'requires_reasoning': llm_analysis.get('requires_reasoning', False),
+        'requires_long_context': llm_analysis.get('requires_long_context', False),
+        
+        # Quality/performance requirements
+        'accuracy_requirement': llm_analysis.get('accuracy_requirement', 'medium'),
+        'latency_sensitivity': llm_analysis.get('latency_sensitivity', 'relaxed'),
+        
+        # Model fit assessment
+        'model_appropriate': llm_analysis.get('model_appropriate', True),
+        'model_assessment': llm_analysis.get('model_assessment', ''),
+        'recommended_tier': llm_analysis.get('recommended_tier', 'standard'),
+        
+        # Additional context
+        'has_system_prompt': bool(system_prompt),
+        'has_context': bool(context),
+        'has_tools': bool(tools),
         'prompt_length_chars': len(original_prompt),
-        'has_code': 'def ' in original_prompt or 'function' in original_prompt,
-        'has_json_request': 'json' in original_prompt.lower(),
-        'language_detected': 'english',  # Simplified
     }
     
     print(f"   ├─ Model: {original_model}")
-    print(f"   ├─ Tokens: ~{metadata['total_tokens']} (in: {input_tokens}, out: ~{estimated_output_tokens})")
-    print(f"   └─ Complexity: {complexity.upper()}")
+    print(f"   ├─ Task: {metadata['task_intention'][:60]}...")
+    print(f"   ├─ Actual Complexity: {metadata['actual_complexity'].upper()}")
+    print(f"   ├─ Category: {metadata['task_category']}")
+    print(f"   ├─ Model Assessment: {metadata['model_assessment'][:50]}...")
+    print(f"   └─ Recommended Tier: {metadata['recommended_tier']}")
     
     return {
         **state,
@@ -232,110 +360,142 @@ def researcher_agent(state: AgentState) -> AgentState:
     
     Responsibilities:
     - Look up current model in model_cards
-    - Find suitable alternatives based on task complexity
-    - Calculate carbon costs for each option
-    - Use GPT to provide intelligent analysis (optional)
+    - Find suitable alternatives based on extracted metadata (not labels)
+    - Calculate costs for each option
+    - Use GPT-5.2 to provide intelligent analysis
     """
     print("\n📚 [Agent 2: Researcher] Researching alternatives...")
     
     metadata = state.get('metadata', {})
     original_model = metadata.get('model_requested', 'unknown')
-    complexity = metadata.get('task_complexity', 'moderate')
+    recommended_tier = metadata.get('recommended_tier', 'standard')
+    requires_vision = metadata.get('requires_vision', False)
+    requires_reasoning = metadata.get('requires_reasoning', False)
     total_tokens = metadata.get('total_tokens', 100)
     
-    # Get current model info (convert dataclass to dict)
+    # Get current model info
     raw_model_info = get_model_card(original_model)
     current_model_info = model_card_to_dict(raw_model_info)
     if not current_model_info:
-        # Create placeholder for unknown model
         current_model_info = {
             'model_id': original_model,
             'provider': 'unknown',
             'display_name': original_model,
-            'carbon_factor': 1.5,  # Assume high
-            'best_for': ['unknown'],
-            'strengths': ['unknown'],
-            'weaknesses': ['unknown']
+            'carbon_factor': 0.0,  # Unknown
+            'input_cost_per_1m': 0.0,
+            'output_cost_per_1m': 0.0,
         }
     
     print(f"   ├─ Current model: {current_model_info.get('display_name', original_model)}")
-    print(f"   │   └─ Carbon factor: {current_model_info.get('carbon_factor', 'N/A')}")
+    print(f"   │   └─ Cost: ${current_model_info.get('input_cost_per_1m', 0)}/{current_model_info.get('output_cost_per_1m', 0)} per MTok")
     
-    # Get recommended models for this complexity
-    recommended_ids = get_recommended_models_for_complexity(complexity)
+    # Get recommended models based on tier and requirements
+    recommended_ids = get_models_for_tier(
+        recommended_tier, 
+        requires_vision=requires_vision,
+        requires_reasoning=requires_reasoning
+    )
     
-    # Build alternative models list with carbon calculations
+    # Calculate costs for current model
+    current_input_cost = (total_tokens / 1_000_000) * current_model_info.get('input_cost_per_1m', 0)
+    current_output_cost = (metadata.get('estimated_output_tokens', 500) / 1_000_000) * current_model_info.get('output_cost_per_1m', 0)
+    current_total_cost = current_input_cost + current_output_cost
+    current_carbon = calculate_carbon_cost(total_tokens, current_model_info.get('carbon_factor', 0.0))
+    
+    # Build alternative models list with cost calculations
     alternatives = []
-    current_carbon = calculate_carbon_cost(total_tokens, current_model_info.get('carbon_factor', 1.0))
     
     for model_id in recommended_ids:
+        if model_id == original_model:
+            continue
+            
         raw_info = get_model_card(model_id)
         model_info = model_card_to_dict(raw_info)
-        if model_info and model_id != original_model:
-            alt_carbon = calculate_carbon_cost(total_tokens, model_info.get('carbon_factor', 1.0))
-            carbon_savings = current_carbon - alt_carbon
-            savings_percent = (carbon_savings / current_carbon * 100) if current_carbon > 0 else 0
+        if not model_info:
+            continue
             
-            best_for = model_info.get('best_for', [])
-            alternatives.append({
-                'model_id': model_id,
-                'name': model_info.get('display_name', model_id),
-                'provider': model_info.get('provider', 'unknown'),
-                'carbon_factor': model_info.get('carbon_factor', 1.0),
-                'carbon_cost': alt_carbon,
-                'carbon_savings': carbon_savings,
-                'savings_percent': savings_percent,
-                'best_for': best_for,
-                'suitable_for_task': complexity in best_for or 
-                                    any(complexity in bf for bf in best_for)
-            })
+        # Calculate costs
+        alt_input_cost = (total_tokens / 1_000_000) * model_info.get('input_cost_per_1m', 0)
+        alt_output_cost = (metadata.get('estimated_output_tokens', 500) / 1_000_000) * model_info.get('output_cost_per_1m', 0)
+        alt_total_cost = alt_input_cost + alt_output_cost
+        alt_carbon = calculate_carbon_cost(total_tokens, model_info.get('carbon_factor', 0.0))
+        
+        # Calculate savings
+        cost_savings = current_total_cost - alt_total_cost
+        cost_savings_percent = (cost_savings / current_total_cost * 100) if current_total_cost > 0 else 0
+        
+        # Carbon savings (may be None if unknown)
+        if current_carbon is not None and alt_carbon is not None:
+            carbon_savings = current_carbon - alt_carbon
+            carbon_savings_percent = (carbon_savings / current_carbon * 100) if current_carbon > 0 else 0
+        else:
+            carbon_savings = None
+            carbon_savings_percent = None
+        
+        alternatives.append({
+            'model_id': model_id,
+            'name': model_info.get('display_name', model_id),
+            'provider': model_info.get('provider', 'unknown'),
+            'total_cost': alt_total_cost,
+            'cost_savings': cost_savings,
+            'cost_savings_percent': cost_savings_percent,
+            'carbon_cost': alt_carbon,
+            'carbon_savings': carbon_savings,
+            'carbon_savings_percent': carbon_savings_percent,
+            'input_cost_per_1m': model_info.get('input_cost_per_1m', 0),
+            'output_cost_per_1m': model_info.get('output_cost_per_1m', 0),
+        })
     
-    # Sort by carbon savings (highest first)
-    alternatives.sort(key=lambda x: x['savings_percent'], reverse=True)
+    # Sort by cost savings (highest first)
+    alternatives.sort(key=lambda x: x['cost_savings_percent'], reverse=True)
     
-    print(f"   ├─ Found {len(alternatives)} alternatives for '{complexity}' tasks")
+    print(f"   ├─ Recommended tier: {recommended_tier}")
+    print(f"   ├─ Found {len(alternatives)} alternatives")
     if alternatives:
         best = alternatives[0]
-        print(f"   └─ Best option: {best['name']} (saves {best['savings_percent']:.1f}% carbon)")
+        print(f"   └─ Best option: {best['name']} (saves {best['cost_savings_percent']:.1f}% cost)")
     
-    # Carbon analysis summary
+    # Analysis summary
     carbon_analysis = {
-        'current_model_carbon': current_carbon,
-        'best_alternative_carbon': alternatives[0]['carbon_cost'] if alternatives else current_carbon,
-        'max_savings_percent': alternatives[0]['savings_percent'] if alternatives else 0,
+        'current_model_cost': current_total_cost,
+        'current_model_carbon': current_carbon,  # May be None
+        'best_alternative_cost': alternatives[0]['total_cost'] if alternatives else current_total_cost,
+        'max_cost_savings_percent': alternatives[0]['cost_savings_percent'] if alternatives else 0,
+        'carbon_data_available': current_carbon is not None,
         'total_alternatives_analyzed': len(alternatives)
     }
     
-    # Optional: Use GPT-5.2 for deeper analysis (if API available)
+    # Use GPT-5.2 for deeper analysis
     gpt_analysis = None
-    try:
-        # Only call API if we have significant savings potential
-        if carbon_analysis['max_savings_percent'] > 20:
+    if alternatives and carbon_analysis['max_cost_savings_percent'] > 10:
+        try:
             analysis_prompt = f"""
-            A developer is using {original_model} for a {complexity} task.
-            The task involves: {state.get('task_description', 'unknown task')}
-            
-            Top alternative: {alternatives[0]['name'] if alternatives else 'none'}
-            Carbon savings: {carbon_analysis['max_savings_percent']:.1f}%
-            
-            In 2-3 sentences, explain why switching models makes sense for this use case.
-            """
-            
+A developer is using {original_model} for this task:
+- Intention: {metadata.get('task_intention', 'unknown')}
+- Actual Complexity: {metadata.get('actual_complexity', 'unknown')}
+- Assessment: {metadata.get('model_assessment', 'unknown')}
+
+Top alternative: {alternatives[0]['name']}
+Cost savings: {carbon_analysis['max_cost_savings_percent']:.1f}%
+
+In 2-3 sentences, explain why switching models makes sense and any caveats.
+"""
             response = client.responses.create(
-                model="gpt-4o-mini",  # Use mini for meta-analysis to save carbon!
+                model="gpt-5.2",
                 input=analysis_prompt,
                 max_output_tokens=150
             )
             gpt_analysis = response.output_text
-            print(f"   └─ GPT Analysis: {gpt_analysis[:80]}...")
-    except Exception as e:
-        gpt_analysis = f"(Analysis unavailable: {str(e)[:50]})"
+            print(f"   └─ GPT-5.2 Analysis: {gpt_analysis[:80]}...")
+        except Exception as e:
+            gpt_analysis = f"(Analysis unavailable: {str(e)[:50]})"
     
     return {
         **state,
         'current_model_info': current_model_info,
         'alternative_models': alternatives[:5],  # Top 5 alternatives
         'carbon_analysis': carbon_analysis,
+        'gpt_analysis': gpt_analysis,
         'messages': state.get('messages', []) + [{
             'role': 'agent',
             'agent': 'researcher',
@@ -355,7 +515,7 @@ def reviewer_agent(state: AgentState) -> AgentState:
     Responsibilities:
     - Validate researcher's recommendations
     - Generate human-readable summary
-    - Add practical insights and warnings
+    - Add practical insights based on metadata
     - Finalize recommendation
     """
     print("\n✅ [Agent 3: Reviewer] Validating recommendation...")
@@ -364,36 +524,58 @@ def reviewer_agent(state: AgentState) -> AgentState:
     current_model = state.get('current_model_info', {})
     alternatives = state.get('alternative_models', [])
     carbon_analysis = state.get('carbon_analysis', {})
-    complexity = metadata.get('task_complexity', 'moderate')
+    gpt_analysis = state.get('gpt_analysis', '')
+    
+    complexity = metadata.get('actual_complexity', 'moderate')
+    task_intention = metadata.get('task_intention', 'unknown task')
+    model_assessment = metadata.get('model_assessment', '')
     
     # Select best recommendation
     if alternatives:
         best_alt = alternatives[0]
         
-        # Validate the recommendation makes sense
+        # Validate the recommendation
         is_valid = True
         warnings = []
         
-        # Check if we're recommending a model that's TOO weak
-        if complexity in ['complex', 'expert'] and best_alt['carbon_factor'] < 0.3:
-            warnings.append("⚠️ Recommended model may be underpowered for this complex task")
+        # Check if the original model was already appropriate
+        if metadata.get('model_appropriate', True) and best_alt['cost_savings_percent'] < 20:
+            warnings.append("ℹ️ Original model choice was reasonable for this task")
+        
+        # Check for minimal savings
+        if best_alt['cost_savings_percent'] < 5:
+            warnings.append("ℹ️ Savings are minimal - current model choice is acceptable")
             is_valid = False
         
-        # Check for minimal savings (not worth switching)
-        if best_alt['savings_percent'] < 5:
-            warnings.append("ℹ️ Savings are minimal - current model choice is reasonable")
+        # Check accuracy requirements
+        if metadata.get('accuracy_requirement') == 'critical':
+            warnings.append("⚠️ High accuracy required - consider sticking with more capable model")
         
         recommendation = {
-            'switch_recommended': is_valid and best_alt['savings_percent'] > 10,
+            'switch_recommended': is_valid and best_alt['cost_savings_percent'] > 10,
             'recommended_model': best_alt['model_id'],
             'recommended_model_name': best_alt['name'],
             'current_model': metadata.get('model_requested', 'unknown'),
-            'carbon_savings_percent': best_alt['savings_percent'],
-            'carbon_savings_grams': best_alt['carbon_savings'],
-            'confidence': 'high' if best_alt['savings_percent'] > 50 else 'medium' if best_alt['savings_percent'] > 20 else 'low',
+            'cost_savings_percent': best_alt['cost_savings_percent'],
+            'cost_savings_usd': best_alt['cost_savings'],
+            'carbon_savings_percent': best_alt.get('carbon_savings_percent'),  # May be None
+            'confidence': 'high' if best_alt['cost_savings_percent'] > 50 else 'medium' if best_alt['cost_savings_percent'] > 20 else 'low',
             'warnings': warnings,
             'alternatives_considered': len(alternatives)
         }
+        
+        # Format carbon savings for display
+        carbon_display = "unknown (carbon data not available)"
+        if best_alt.get('carbon_savings_percent') is not None:
+            carbon_display = f"{best_alt['carbon_savings_percent']:.1f}%"
+        
+        current_carbon_display = "unknown"
+        if carbon_analysis.get('current_model_carbon') is not None:
+            current_carbon_display = f"{carbon_analysis['current_model_carbon']:.6f}g CO₂"
+        
+        alt_carbon_display = "unknown"
+        if best_alt.get('carbon_cost') is not None:
+            alt_carbon_display = f"{best_alt['carbon_cost']:.6f}g CO₂"
         
         # Generate human-readable summary
         if recommendation['switch_recommended']:
@@ -401,23 +583,28 @@ def reviewer_agent(state: AgentState) -> AgentState:
 🌱 AI-GAUGE RECOMMENDATION
 ════════════════════════════════════════════════════════════════
 
-📊 ANALYSIS
-   Task Complexity: {complexity.upper()}
-   Current Model:   {current_model.get('display_name', 'Unknown')} ({current_model.get('provider', '?')})
+📊 TASK ANALYSIS (by GPT-5.2)
+   Intention:       {task_intention}
+   Complexity:      {complexity.upper()}
+   Category:        {metadata.get('task_category', 'unknown')}
+   Assessment:      {model_assessment}
+   
+📍 CURRENT MODEL
+   Model:           {current_model.get('display_name', 'Unknown')} ({current_model.get('provider', '?')})
+   Cost:            ${carbon_analysis.get('current_model_cost', 0):.6f} for this request
+   Carbon:          {current_carbon_display}
    
 🔄 RECOMMENDATION: SWITCH MODEL
    Suggested:       {best_alt['name']} ({best_alt['provider']})
+   Cost:            ${best_alt['total_cost']:.6f}
+   Carbon:          {alt_carbon_display}
    
-💚 CARBON IMPACT
-   Current Cost:    {carbon_analysis['current_model_carbon']:.4f}g CO₂
-   New Cost:        {best_alt['carbon_cost']:.4f}g CO₂
-   You Save:        {best_alt['savings_percent']:.1f}% carbon emissions
+💰 SAVINGS
+   Cost Savings:    {best_alt['cost_savings_percent']:.1f}% (${best_alt['cost_savings']:.6f})
+   Carbon Savings:  {carbon_display}
    
-💡 WHY SWITCH?
-   Your task is classified as '{complexity}' - it doesn't require
-   the full power of {current_model.get('display_name', 'your current model')}.
-   {best_alt['name']} handles {complexity} tasks efficiently with
-   significantly lower environmental impact.
+💡 GPT-5.2 INSIGHT
+   {gpt_analysis if gpt_analysis else 'N/A'}
    
 {"".join(['   ' + w + chr(10) for w in warnings])}
 ════════════════════════════════════════════════════════════════
@@ -427,12 +614,13 @@ def reviewer_agent(state: AgentState) -> AgentState:
 🌱 AI-GAUGE RECOMMENDATION
 ════════════════════════════════════════════════════════════════
 
-📊 ANALYSIS
-   Task Complexity: {complexity.upper()}
-   Current Model:   {current_model.get('display_name', 'Unknown')}
+📊 TASK ANALYSIS (by GPT-5.2)
+   Intention:       {task_intention}
+   Complexity:      {complexity.upper()}
+   Assessment:      {model_assessment}
    
 ✅ RECOMMENDATION: KEEP CURRENT MODEL
-   Your model choice is appropriate for this {complexity} task.
+   Your model choice ({current_model.get('display_name', 'Unknown')}) is appropriate.
    {"".join(['   ' + w + chr(10) for w in warnings])}
    
 ════════════════════════════════════════════════════════════════
@@ -448,6 +636,8 @@ def reviewer_agent(state: AgentState) -> AgentState:
     
     print(f"   ├─ Switch recommended: {recommendation.get('switch_recommended', False)}")
     print(f"   ├─ Confidence: {recommendation.get('confidence', 'N/A')}")
+    savings = recommendation.get('cost_savings_percent', 0)
+    print(f"   └─ Savings: {savings:.1f}%" if savings else "   └─ Savings: N/A")
     print(f"   └─ Savings: {recommendation.get('carbon_savings_percent', 0):.1f}%")
     
     return {
@@ -497,20 +687,27 @@ def create_decision_graph() -> StateGraph:
 def analyze_llm_request(
     model: str,
     prompt: str,
-    task_description: str = ""
+    task_description: str = "",
+    system_prompt: str = "",
+    context: Optional[Dict[str, Any]] = None,
+    tools: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Main entry point for the decision module.
     
-    Analyzes an LLM request and provides carbon-efficient recommendations.
+    Analyzes an LLM request and provides cost/carbon-efficient recommendations.
+    Uses GPT-5.2 for intelligent task analysis (not keyword matching).
     
     Args:
         model: The model ID the developer intends to use (e.g., "gpt-5")
-        prompt: The actual prompt being sent to the LLM
+        prompt: The user prompt being sent to the LLM
         task_description: Optional description of what the task is for
+        system_prompt: Optional system prompt if any
+        context: Optional context object being passed
+        tools: Optional list of tools being used
     
     Returns:
-        Dict containing recommendation, carbon analysis, and human-readable summary
+        Dict containing recommendation, cost/carbon analysis, and human-readable summary
     """
     # Create the graph
     graph = create_decision_graph()
@@ -520,10 +717,14 @@ def analyze_llm_request(
         'original_model': model,
         'original_prompt': prompt,
         'task_description': task_description or prompt[:100],
+        'system_prompt': system_prompt,
+        'context': context or {},
+        'tools': tools or [],
         'metadata': {},
         'current_model_info': {},
         'alternative_models': [],
         'carbon_analysis': {},
+        'gpt_analysis': None,
         'recommendation': {},
         'human_readable_summary': '',
         'messages': []
@@ -531,7 +732,7 @@ def analyze_llm_request(
     
     # Run the graph
     print("\n" + "="*70)
-    print("🌱 AI-GAUGE: Analyzing your LLM request...")
+    print("🌱 AI-GAUGE: Analyzing your LLM request with GPT-5.2...")
     print("="*70)
     
     final_state = graph.invoke(initial_state)
@@ -541,6 +742,7 @@ def analyze_llm_request(
         'recommendation': final_state.get('recommendation', {}),
         'carbon_analysis': final_state.get('carbon_analysis', {}),
         'alternatives': final_state.get('alternative_models', []),
+        'gpt_analysis': final_state.get('gpt_analysis', ''),
         'summary': final_state.get('human_readable_summary', ''),
         'agent_messages': final_state.get('messages', [])
     }
@@ -556,25 +758,40 @@ if __name__ == "__main__":
     print("       AI-GAUGE DECISION MODULE - LangGraph Demo")
     print("🌿"*35)
     
-    # This simulates intercepting the developer's oversized model request
-    demo_model = "gpt-5"
+    # This simulates the "bad example" from main.py
+    # Developer uses GPT-5.2 for what looks complex but is actually trivial
+    demo_system_prompt = """
+You are an elite AI communications specialist at a Fortune 500 developer tools company.
+Your expertise spans technical writing, UX copy, brand voice consistency, and conversion optimization.
+Apply the following frameworks:
+- AIDA (Attention, Interest, Desire, Action) for engagement
+- Plain language principles (Flesch-Kincaid Grade 8 or below)
+- Developer empathy mapping for audience resonance
+"""
+    
     demo_prompt = """
-    Please review the following enterprise documentation for quality and compliance:
+Rewrite the following onboarding tooltip to improve clarity and user engagement:
+
+ORIGINAL: "This extension helps you track LLM usage for greener prompts and lower costs."
+
+Apply all brand guidelines, audience insights, and engagement frameworks from the context.
+Deliver a single, refined sentence optimized for the specified constraints.
+
+Return exactly ONE sentence. No explanation, no alternatives, no preamble.
+"""
     
-    Meeting Notes - Q3 Planning
-    - Discussed roadmap
-    - Action items assigned
-    - Next meeting Tuesday
-    
-    Ensure professional tone and fix any grammatical issues.
-    """
-    demo_task = "Copy-editing meeting notes (trivial formatting task)"
+    demo_context = {
+        "company": {"name": "AI Gauge", "industry": "Developer Tools"},
+        "constraints": {"max_words": 30, "avoid": ["hype", "buzzwords"]},
+    }
     
     # Run the 3-agent analysis
     result = analyze_llm_request(
-        model=demo_model,
+        model="gpt-5.2",
         prompt=demo_prompt,
-        task_description=demo_task
+        system_prompt=demo_system_prompt,
+        context=demo_context,
+        task_description="Copy-editing a tooltip sentence"
     )
     
     # Print the human-readable summary
@@ -585,5 +802,10 @@ if __name__ == "__main__":
     print("-" * 40)
     print(json.dumps({
         'recommendation': result['recommendation'],
-        'carbon_analysis': result['carbon_analysis']
-    }, indent=2))
+        'carbon_analysis': result['carbon_analysis'],
+        'metadata_summary': {
+            'task_intention': result['metadata'].get('task_intention'),
+            'actual_complexity': result['metadata'].get('actual_complexity'),
+            'model_assessment': result['metadata'].get('model_assessment'),
+        }
+    }, indent=2, default=str))
