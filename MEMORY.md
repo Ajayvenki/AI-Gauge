@@ -6,10 +6,10 @@
 
 ## 🎯 Project Vision
 
-**AI-Gauge** (a.k.a. "Prompt Carbon Tracker") is a developer tool that analyzes LLM API calls **before** they are executed to:
-1. **Estimate cost** (USD) of the planned request
-2. **Estimate carbon footprint** (when data is available)
-3. **Recommend more efficient model alternatives** that can accomplish the task at lower cost/carbon
+**AI-Gauge** (a.k.a. "Prompt Carbon Tracker") is a developer tool designed to be integrated as an **IDE plugin** that automatically intercepts LLM API calls **before** they execute to:
+1. **Assess if the model choice is appropriate** for the actual task
+2. **Estimate cost and carbon footprint** 
+3. **Recommend alternatives ONLY when the model is overkill**
 
 ### The Core Problem
 Developers often use oversized frontier models (like GPT-5.2) for trivial tasks because:
@@ -18,10 +18,11 @@ Developers often use oversized frontier models (like GPT-5.2) for trivial tasks 
 - There's no visibility into cost/carbon impact until after the fact
 
 ### The Solution
-AI-Gauge intercepts LLM request metadata and runs it through a **3-agent LangGraph pipeline** that:
-1. Uses GPT-5.2 to **intelligently analyze** the task (not keyword matching)
-2. Finds appropriate alternative models based on **actual requirements**
-3. Provides actionable recommendations with cost/carbon savings
+An IDE plugin intercepts the LLM API call, extracts all metadata **automatically** (no user input required), and runs it through a **3-agent LangGraph pipeline** that:
+1. **Extracts pure metadata** from the intercepted call
+2. **Uses GPT-5.2 to analyze** if the model choice is appropriate
+3. **Only recommends alternatives if the model is overkill** (not forced recommendations)
+4. **Explains WHY** the recommended model is sufficient for the task
 
 ---
 
@@ -29,43 +30,44 @@ AI-Gauge intercepts LLM request metadata and runs it through a **3-agent LangGra
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         AI-GAUGE SYSTEM                                  │
+│                    IDE PLUGIN (Future: VS Code Extension)               │
+│                                                                          │
+│  Intercepts API calls like:                                             │
+│    client.responses.create(model="gpt-5.2", input=[...])                │
+│                                                                          │
+│  Auto-extracts: model, prompt, system_prompt, tools, context            │
+│  NO user input required - fully automatic                               │
+└─────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    AI-GAUGE DECISION PIPELINE                            │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  Developer's Code (main.py)                                             │
-│  ┌──────────────────────────────────────────────────────────────┐      │
-│  │  model = "gpt-5.2"                                            │      │
-│  │  system_prompt = "You are an elite..."                        │      │
-│  │  user_prompt = "Rewrite this tooltip..."                      │      │
-│  │  context = {...}                                              │      │
-│  └──────────────────────────────────────────────────────────────┘      │
-│                              │                                           │
-│                              ▼                                           │
-│  Decision Module (decision_module.py) — LangGraph Pipeline              │
-│  ┌──────────────────────────────────────────────────────────────┐      │
-│  │                                                                │      │
-│  │   ┌────────────────┐   ┌────────────────┐   ┌──────────────┐ │      │
-│  │   │   Agent 1      │──▶│   Agent 2      │──▶│   Agent 3    │ │      │
-│  │   │   Metadata     │   │   Researcher   │   │   Reviewer   │ │      │
-│  │   │   Collector    │   │                │   │              │ │      │
-│  │   │                │   │                │   │              │ │      │
-│  │   │ Uses GPT-5.2   │   │ Queries model  │   │ Validates &  │ │      │
-│  │   │ to analyze:    │   │ registry,      │   │ formats      │ │      │
-│  │   │ - Task intent  │   │ calculates     │   │ recommendation│ │      │
-│  │   │ - Complexity   │   │ costs, finds   │   │ for human    │ │      │
-│  │   │ - Requirements │   │ alternatives   │   │ consumption  │ │      │
-│  │   └────────────────┘   └────────────────┘   └──────────────┘ │      │
-│  │                                                                │      │
-│  └──────────────────────────────────────────────────────────────┘      │
-│                              │                                           │
-│                              ▼                                           │
-│  Model Registry (model_cards.py)                                        │
-│  ┌──────────────────────────────────────────────────────────────┐      │
-│  │  25+ models from OpenAI, Anthropic, Google                    │      │
-│  │  Official data only: pricing, context window, capabilities    │      │
-│  │  Carbon factors: 0.0 = unknown (no guessing)                  │      │
-│  └──────────────────────────────────────────────────────────────┘      │
+│   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐   │
+│   │   Agent 1        │──▶│   Agent 2        │──▶│   Agent 3        │   │
+│   │   METADATA       │   │   ANALYZER       │   │   REPORTER       │   │
+│   │   EXTRACTOR      │   │                  │   │                  │   │
+│   │                  │   │                  │   │                  │   │
+│   │ Pure extraction  │   │ Uses GPT-5.2 to  │   │ Generates        │   │
+│   │ NO analysis      │   │ assess if model  │   │ human-readable   │   │
+│   │ NO recommendations│  │ is appropriate   │   │ summary with     │   │
+│   │                  │   │                  │   │ reasoning        │   │
+│   │ Outputs:         │   │ Key decision:    │   │                  │   │
+│   │ - token counts   │   │ is_appropriate?  │   │ Explains WHY     │   │
+│   │ - has_tools      │   │                  │   │ alternative is   │   │
+│   │ - has_context    │   │ Only finds alts  │   │ sufficient for   │   │
+│   │                  │   │ if NOT appropriate│  │ this task        │   │
+│   └──────────────────┘   └──────────────────┘   └──────────────────┘   │
 │                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Model Registry (model_cards.py)                                        │
+│  ├── OpenAI: GPT-5.2, GPT-5, GPT-4.1, GPT-4o, 4o-mini, etc.            │
+│  ├── Anthropic: Claude Opus 4.5, Sonnet 4.5, Haiku 4.5 (official data) │
+│  └── Google: Gemini 3 Pro, 2.5 Pro, 2.5 Flash, etc. (official data)    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,40 +77,94 @@ AI-Gauge intercepts LLM request metadata and runs it through a **3-agent LangGra
 
 | File | Purpose |
 |------|---------|
-| `main.py` | **"Bad Example"** - Simulates a developer using GPT-5.2 for a trivial copy-editing task. Demonstrates the problem AI-Gauge solves. |
-| `model_cards.py` | **Model Registry** - Dataclass-based registry of 25+ models with official pricing, context windows, capabilities. Sources cited in notes. Unknown values marked explicitly. |
-| `decision_module.py` | **LangGraph 3-Agent Pipeline** - The core recommendation engine. Uses GPT-5.2 for intelligent task analysis. |
-| `MEMORY.md` | **This file** - Long-term project memory for context restoration. |
+| `main.py` | **"Bad Example"** - Simulates a developer using GPT-5.2 for a trivial task. |
+| `model_cards.py` | **Model Registry** - 25+ models with official pricing. Carbon factors: 0.0 = unknown. |
+| `decision_module.py` | **LangGraph 3-Agent Pipeline** - Core recommendation engine. |
+| `MEMORY.md` | **This file** - Long-term project memory. |
 | `requirements.txt` | Dependencies: openai, python-dotenv, langgraph |
 
 ---
 
 ## 🔧 Technical Decisions
 
-### 1. Task Analysis Approach
-**Previous**: Keyword-based classification (e.g., "if 'code' in prompt → complex")
-**Current**: GPT-5.2 analyzes the actual task and extracts structured metadata:
-- `task_intention`: What is the task trying to accomplish?
-- `task_category`: text_generation, code_generation, analysis, etc.
-- `actual_complexity`: trivial/simple/moderate/complex/expert (with reasoning)
-- `requires_vision/audio/reasoning/long_context`: Boolean flags
-- `accuracy_requirement`: low/medium/high/critical
-- `model_appropriate`: Is the chosen model overkill/appropriate/underpowered?
-- `recommended_tier`: budget/standard/premium/frontier
+### 1. IDE Plugin Metadata Collection (Point a)
+**Design**: The plugin intercepts LLM SDK calls at runtime:
+- Monkey-patches `client.responses.create()`, `client.chat.completions.create()`
+- Extracts model, prompt, system_prompt, tools, context from the actual call
+- **NO manual metadata passing required** - fully automatic
 
-### 2. Model Recommendations
-**Previous**: Label matching (complexity → hardcoded model list)
+### 2. Carbon Calculation (Point b)
+**Methodology**: Based on CodeCarbon and "Power Hungry Processing" (Luccioni et al., 2024)
+
+$$\text{CO}_2\text{eq (g)} = \text{Energy (kWh)} \times \text{Carbon Intensity (gCO}_2\text{/kWh)} \times \text{PUE}$$
+
+Where:
+- **Energy** = (GPU Power × Inference Time) / 3600 / 1000
+- **Inference Time** = Total Tokens / Throughput (tokens/sec)
+- **GPU Power**: Estimated by model tier (budget: 200W, frontier: 700W)
+- **Carbon Intensity**: By provider (OpenAI: 200, Google: 150, default: 400 gCO₂/kWh)
+- **PUE**: 1.2 (typical cloud datacenter)
+
+### 3. Agent Responsibilities (Point c)
+**Agent 1 (Metadata Extractor)**:
+- Pure extraction only: token counts, has_tools, has_context
+- NO analysis, NO recommendations, NO tier suggestions
+
+**Agent 2 (Analyzer)**:
+- Uses GPT-5.2 to analyze task complexity
+- **Key output**: `is_model_appropriate` (boolean)
+- Only searches for alternatives if model is NOT appropriate
+
+**Agent 3 (Reporter)**:
+- Generates human-readable summary
+- Explains WHY the recommended model is sufficient
+
+### 4. Conditional Recommendations (Point d)
+**Previous**: Always suggested alternatives, sorted by savings
+**Current**: 
+- First validates if model is appropriate
+- Only suggests alternatives if `is_model_appropriate = false`
+- If appropriate, outputs "Model choice is appropriate. No changes recommended."
+
+### 5. Recommendation Reasoning (Point e)
+When recommending a switch, explains specifically:
+- WHY the alternative model suits the task
+- WHY the original model is overkill
+- What capabilities the task actually requires
+
+Example output:
+```
+💡 WHY THIS MODEL IS SUFFICIENT
+   GPT-4o-mini can handle this task because it's designed for simple text 
+   editing and summarization. GPT-5.2 is overkill since this is a trivial 
+   single-sentence rewrite that doesn't require frontier reasoning capabilities.
+```
 **Current**: Tier-based selection filtered by requirements:
 - `budget`: gpt-4o-mini, claude-haiku-4-5, gemini-2.0-flash-lite
 - `standard`: gpt-4o, claude-sonnet-4-5, gemini-2.5-flash
 - `premium`: gpt-5-mini, o4-mini, gemini-2.5-pro
 - `frontier`: gpt-5.2, claude-opus-4-5, gemini-3-pro
 
-### 3. Carbon Factors
-**Constraint**: Only use official/verified data. Unknown values = `0.0`.
-When carbon_factor is 0 or unknown:
-- `calculate_carbon_cost()` returns `None`
-- Carbon savings displayed as "unknown" instead of fabricated numbers
+### 3. Carbon Calculation (Research-Based)
+**Formula**: CO2eq = Energy (kWh) × Carbon Intensity (gCO2/kWh) × PUE
+
+**Energy Estimation**:
+```
+Energy (kWh) = (TDP_watts × inference_seconds) / 3600000
+inference_seconds = output_tokens / tokens_per_second
+```
+
+**TDP Estimates by Model Tier**:
+- Frontier models (gpt-5.2, claude-opus-4-5): 350W
+- Standard models (gpt-4o, claude-sonnet-4-5): 250W
+- Lightweight models (gpt-4o-mini, haiku): 150W
+
+**Constants**:
+- Carbon Intensity: 400 gCO2/kWh (global average from ElectricityMaps)
+- PUE (Power Usage Effectiveness): 1.2 (typical datacenter overhead)
+- Tokens per second: 50 (average inference speed)
+
+**Sources**: CodeCarbon, ML CO2 Impact, "Power Hungry Processing" paper
 
 ### 4. API Usage
 - OpenAI Responses API: `client.responses.create(model=..., input=..., max_output_tokens=...)`
@@ -186,28 +242,33 @@ python model_cards.py
 
 ### ✅ Completed
 1. Model cards updated with official sources (OpenAI, Anthropic, Google)
-2. Decision module rewritten to use GPT-5.2 for task analysis (not keywords)
-3. Tier-based model recommendations (not label matching)
-4. Carbon handling updated to show "unknown" instead of fabricated values
-5. All syntax verified and compiling
+2. Decision module rewritten with 3-agent LangGraph workflow
+3. **Agent 1 (Metadata Extractor)**: Pure extraction - collects prompts, context, tools; analyzes task complexity WITHOUT making tier recommendations
+4. **Agent 2 (Analyzer)**: Checks if original model is appropriate FIRST; only finds alternatives if NOT appropriate
+5. **Agent 3 (Reporter)**: Generates explanation with WHY reasoning for recommendations
+6. Carbon calculation enhanced with TDP-based energy estimation (research-based formula)
+7. Conditional recommendations: suggestions only when model is inappropriate for task
+8. IDE plugin interception design: metadata auto-collected, users don't send details
 
 ### 🔜 Future Work (Parked)
-1. **IDE Integration**: How to intercept LLM calls before they execute (VS Code extension, proxy, etc.)
+1. **IDE Integration**: VS Code extension to intercept LLM calls before execution
 2. **SLM Replacement**: Replace GPT-5.2 analysis with fine-tuned local model (Qwen2-0.5B)
 3. **CLI Tool**: `$ carbon stats` command with Rich terminal UI
-4. **Actual Carbon Data**: Research and populate real carbon factors from published studies
+4. **Real-time Grid Carbon**: Integration with ElectricityMaps for location-based carbon intensity
 
 ---
 
 ## 💡 Key Insights
 
-1. **The "bad example" pattern**: Developer code often looks complex (enterprise prompts, context objects) but the actual task is trivial (rewrite one sentence).
+1. **IDE plugin interception**: The plugin auto-collects metadata (prompts, context, tools) before LLM calls execute. Users don't manually send details.
 
-2. **GPT-5.2 can detect this**: When asked to analyze the task, it correctly identifies that the actual complexity is low even when the prompt dressing is elaborate.
+2. **Conditional recommendations**: Suggestions only appear when the original model is inappropriate for the task. If gpt-5.2 is used for complex reasoning, no alternative is suggested.
 
-3. **Cost savings are primary**: Since carbon data is largely unknown, the immediate value is in cost savings. Carbon tracking becomes meaningful once verified data is available.
+3. **Appropriateness-first logic**: Agent 2 validates whether the original model fits the task complexity BEFORE searching for alternatives.
 
-4. **Pre-execution is the goal**: The ultimate goal is to analyze requests *before* they execute, not after. This requires IDE/proxy integration (future phase).
+4. **WHY explanations**: When alternatives are suggested, the system explains why the lighter model is sufficient (e.g., "Simple paraphrase task doesn't require frontier reasoning").
+
+5. **Carbon calculation is estimated**: Using TDP-based energy estimation since actual GPU power draw data isn't published by providers.
 
 ---
 
