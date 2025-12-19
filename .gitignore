@@ -209,3 +209,6 @@ __marimo__/
 MEMORY.md
 
 training_data/
+VALUE_PROPOSITION.md
+ide_plugin/
+test_decision_module.py
