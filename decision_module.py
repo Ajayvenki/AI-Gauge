@@ -75,20 +75,24 @@ class AgentState(TypedDict):
     system_prompt: str           # System prompt if any
     context: Dict[str, Any]      # Any context object passed
     tools: List[str]             # Tools/functions being used
+    reasoning_effort: str        # Reasoning effort level (none, low, medium, high, max)
+    model_config: Dict[str, Any] # Model configuration (temperature, max_tokens, etc.)
+    conversation_history: List[Dict[str, str]]  # Previous conversation turns
     
-    # Agent 1 output: Pure metadata extraction (NO analysis, NO recommendations)
+    # Agent 1 output: Comprehensive metadata extraction (NO analysis, NO recommendations)
     metadata: Dict[str, Any]
     
     # Agent 2 output: Analysis results
     is_model_appropriate: bool           # Key decision: is the model a good fit?
     appropriateness_reasoning: str       # Why it is/isn't appropriate
     current_model_info: Dict[str, Any]
-    alternative_models: List[Dict[str, Any]]  # Only populated if inappropriate
+    alternative_models: List[Dict[str, Any]]  # Multiple alternatives if inappropriate
     carbon_analysis: Dict[str, Any]
     
-    # Agent 3 output: Final report
-    recommendation: Dict[str, Any]
-    human_readable_summary: str
+    # Agent 3 output: Review and Report
+    recommendation: Dict[str, Any]       # Contains multiple recommended models
+    human_readable_summary: str          # Detailed report with all alternatives
+    review_verdict: str                  # APPROPRIATE, OVERKILL, or UNDERPOWERED
     
     # Debug/trace
     messages: List[Dict[str, Any]]
@@ -226,34 +230,142 @@ def model_card_to_dict(card) -> Dict[str, Any]:
     return asdict(card)
 
 
+# Latency estimates by tier (milliseconds for first token, seconds for full response)
+LATENCY_ESTIMATES = {
+    # First token latency (ms), Full response time (sec per 100 tokens)
+    'ultra-fast': {'first_token_ms': 100, 'per_100_tokens_sec': 0.3},
+    'fast': {'first_token_ms': 200, 'per_100_tokens_sec': 0.5},
+    'medium': {'first_token_ms': 400, 'per_100_tokens_sec': 0.8},
+    'slow': {'first_token_ms': 800, 'per_100_tokens_sec': 1.5},
+    'unknown': {'first_token_ms': 500, 'per_100_tokens_sec': 1.0},
+}
+
+
+def estimate_latency(model_info: Dict[str, Any], output_tokens: int = 100) -> Dict[str, Any]:
+    """
+    Estimate latency for a model based on its tier and expected output tokens.
+    
+    Returns:
+        Dict with estimated first token latency, full response time, and tier.
+    """
+    latency_tier = model_info.get('latency_tier', 'unknown')
+    estimates = LATENCY_ESTIMATES.get(latency_tier, LATENCY_ESTIMATES['unknown'])
+    
+    first_token_ms = estimates['first_token_ms']
+    per_100_tokens_sec = estimates['per_100_tokens_sec']
+    
+    # Calculate full response time
+    full_response_sec = per_100_tokens_sec * (output_tokens / 100)
+    total_time_sec = (first_token_ms / 1000) + full_response_sec
+    
+    return {
+        'latency_tier': latency_tier,
+        'first_token_ms': first_token_ms,
+        'full_response_sec': round(full_response_sec, 2),
+        'total_time_sec': round(total_time_sec, 2),
+    }
+
+
 def extract_metadata_only(
     system_prompt: str,
     user_prompt: str,
     model_id: str,
     context: Optional[Dict[str, Any]] = None,
-    tools: Optional[List[str]] = None
+    tools: Optional[List[str]] = None,
+    reasoning_effort: Optional[str] = None,
+    model_config: Optional[Dict[str, Any]] = None,
+    conversation_history: Optional[List[Dict[str, str]]] = None
 ) -> Dict[str, Any]:
     """
-    Agent 1's helper: Extract pure metadata from the intercepted API call.
+    Agent 1's helper: Extract RAW metadata from the intercepted API call.
     
-    This function does NOT:
-    - Make recommendations
-    - Assess if the model is appropriate
-    - Suggest alternatives
+    This function is PURELY for data extraction - NO analysis, NO recommendations,
+    NO hardcoded rules for task classification. All intelligence is left to Agent 2.
     
-    It ONLY extracts factual metadata about what the task IS.
+    Returns raw factual data that Agent 2 will interpret using AI.
     """
+    # Tool information (raw extraction, no categorization)
+    tool_names = tools if tools else []
+    
+    # Context information (raw metrics)
+    context_depth = calculate_context_depth(context) if context else 0
+    context_size_bytes = len(str(context)) if context else 0
+    
+    # Conversation history (raw metrics)
+    conversation_turns = len(conversation_history) if conversation_history else 0
+    conversation_tokens = 0
+    if conversation_history:
+        for turn in conversation_history:
+            conversation_tokens += estimate_tokens(turn.get('content', ''))
+    
+    # Model config (raw extraction)
+    temperature = model_config.get('temperature', 0.7) if model_config else 0.7
+    max_tokens_requested = model_config.get('max_tokens', 0) if model_config else 0
+    top_p = model_config.get('top_p', 1.0) if model_config else 1.0
+    
+    # Reasoning effort (raw value)
+    reasoning_level = reasoning_effort if reasoning_effort else "none"
+    
+    # Estimate total input tokens
+    total_input_tokens = estimate_tokens((system_prompt or '') + (user_prompt or ''))
+    total_input_tokens += conversation_tokens
+    if context:
+        total_input_tokens += estimate_tokens(str(context))
+    
+    # Return RAW metadata - Agent 2 will analyze this with AI
     return {
+        # Core identifiers
         'model_requested': model_id,
-        'has_system_prompt': bool(system_prompt),
-        'has_context': bool(context),
-        'has_tools': bool(tools),
-        'tool_count': len(tools) if tools else 0,
+        
+        # Raw prompt data (no interpretation)
+        'system_prompt': system_prompt or '',
         'system_prompt_length': len(system_prompt) if system_prompt else 0,
+        'user_prompt': user_prompt or '',
         'user_prompt_length': len(user_prompt) if user_prompt else 0,
+        
+        # Raw tool data (Agent 2 will interpret)
+        'tools': tool_names,
+        'tool_count': len(tool_names),
+        
+        # Raw context data (Agent 2 will interpret)
+        'context': context,
         'context_keys': list(context.keys()) if context else [],
-        'input_tokens_estimated': estimate_tokens((system_prompt or '') + (user_prompt or '')),
+        'context_depth': context_depth,
+        'context_size_bytes': context_size_bytes,
+        
+        # Raw conversation data
+        'conversation_history': conversation_history or [],
+        'conversation_turns': conversation_turns,
+        'conversation_tokens': conversation_tokens,
+        
+        # Raw reasoning config
+        'reasoning_effort': reasoning_level,
+        
+        # Raw model config
+        'temperature': temperature,
+        'max_tokens_requested': max_tokens_requested,
+        'top_p': top_p,
+        
+        # Raw token metrics
+        'input_tokens_estimated': total_input_tokens,
     }
+
+
+def calculate_context_depth(obj: Any, current_depth: int = 0) -> int:
+    """Calculate the nesting depth of a context object."""
+    if current_depth > 10:  # Prevent infinite recursion
+        return current_depth
+    
+    if isinstance(obj, dict):
+        if not obj:
+            return current_depth
+        return max(calculate_context_depth(v, current_depth + 1) for v in obj.values())
+    elif isinstance(obj, list):
+        if not obj:
+            return current_depth
+        return max(calculate_context_depth(item, current_depth + 1) for item in obj[:10])  # Limit list check
+    else:
+        return current_depth
 
 
 def analyze_task_appropriateness(
@@ -261,6 +373,7 @@ def analyze_task_appropriateness(
     user_prompt: str,
     model_id: str,
     model_card: Dict[str, Any],
+    metadata: Dict[str, Any],
     context: Optional[Dict[str, Any]] = None,
     tools: Optional[List[str]] = None
 ) -> Dict[str, Any]:
@@ -272,57 +385,139 @@ def analyze_task_appropriateness(
     
     Returns structured analysis with reasoning.
     """
-    analysis_prompt = f"""You are an expert at assessing LLM API usage efficiency.
+    
+    # Build context from RAW metadata - NO pre-interpretation
+    # Agent 2 (GPT-5.2) will do ALL the intelligent analysis
+    
+    tool_info = f"""
+TOOLS PROVIDED: {metadata.get('tool_count', 0)} tools
+Tool Names: {', '.join(metadata.get('tools', [])) or 'none'}
+"""
 
-Analyze this LLM API call and determine if the chosen model is APPROPRIATE for the task.
+    context_info = f"""
+CONTEXT DATA:
+Context Keys: {metadata.get('context_keys', [])}
+Context Depth: {metadata.get('context_depth', 0)} levels
+Context Size: {metadata.get('context_size_bytes', 0)} bytes
+"""
 
-## System Prompt
-{system_prompt[:2000] if system_prompt else "(none)"}
+    conversation_info = f"""
+CONVERSATION:
+Turns: {metadata.get('conversation_turns', 0)}
+History Tokens: {metadata.get('conversation_tokens', 0)}
+"""
 
-## User Prompt  
-{user_prompt[:2000]}
+    model_config_info = f"""
+MODEL CONFIGURATION:
+Temperature: {metadata.get('temperature', 'N/A')}
+Max Tokens Requested: {metadata.get('max_tokens_requested', 'N/A')}
+Top P: {metadata.get('top_p', 'N/A')}
+Reasoning Effort: {metadata.get('reasoning_effort', 'none')}
+"""
+    
+    analysis_prompt = f"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    LLM API CALL EFFICIENCY ANALYZER                          ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  YOUR TASK: Analyze this API call and determine if the model is APPROPRIATE ║
+║                                                                              ║
+║  YOU ARE THE INTELLIGENCE - analyze the prompts and metadata to determine:  ║
+║  1. What task is being requested?                                            ║
+║  2. How complex is this task REALLY?                                         ║
+║  3. Is the chosen model appropriate, overkill, or underpowered?             ║
+║                                                                              ║
+║  Do NOT rely on simple keyword matching - understand the ACTUAL task!        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 
-## Model Being Used
-{model_id}
-- Provider: {model_card.get('provider', 'unknown')}
-- Cost: ${model_card.get('input_cost_per_1m', 0):.2f}/${model_card.get('output_cost_per_1m', 0):.2f} per MTok
-- Tier: {model_card.get('family', 'unknown')}
+═══════════════════════════════════════════════════════════════════════════════
+FULL SYSTEM PROMPT (Analyze this carefully!)
+═══════════════════════════════════════════════════════════════════════════════
+{metadata.get('system_prompt', '(none)')[:3000]}
 
-## Context/Tools
-Context keys: {list(context.keys()) if context else 'none'}
-Tools: {', '.join(tools) if tools else 'none'}
+═══════════════════════════════════════════════════════════════════════════════
+FULL USER PROMPT (This is what the user actually wants!)
+═══════════════════════════════════════════════════════════════════════════════
+{metadata.get('user_prompt', '')[:3000]}
 
----
+═══════════════════════════════════════════════════════════════════════════════
+MODEL BEING USED
+═══════════════════════════════════════════════════════════════════════════════
+Model ID: {model_id}
+Provider: {model_card.get('provider', 'unknown')}
+Cost: ${model_card.get('input_cost_per_1m', 0):.2f} / ${model_card.get('output_cost_per_1m', 0):.2f} per MTok (in/out)
+Model Tier: {model_card.get('family', 'unknown')}
+Supports Reasoning Mode: {'YES' if model_card.get('supports_reasoning') else 'NO'}
 
-Analyze the ACTUAL task complexity (not how it appears) and return JSON:
+═══════════════════════════════════════════════════════════════════════════════
+RAW METADATA (Interpret these - do not just check keywords!)
+═══════════════════════════════════════════════════════════════════════════════
+{tool_info}
+{context_info}
+{conversation_info}
+{model_config_info}
 
+Total Input Tokens (estimated): {metadata.get('input_tokens_estimated', 0)}
+
+═══════════════════════════════════════════════════════════════════════════════
+YOUR ANALYSIS GUIDELINES
+═══════════════════════════════════════════════════════════════════════════════
+COMPLEXITY ASSESSMENT (Use your judgment!):
+
+TRIVIAL - Examples:
+  • "fix typo in this word" → even if prompt mentions "code"
+  • "translate 'hello' to Spanish"
+  • "what is 2+2"
+  • "capitalize this sentence"
+
+SIMPLE - Examples:
+  • Short email drafts, brief summaries
+  • Simple explanations without deep reasoning
+  • Basic list generation, formatting tasks
+
+MODERATE - Examples:
+  • Write a function with proper error handling
+  • Explain a concept with examples
+  • Debug a specific error, write documentation
+
+COMPLEX - Examples:
+  • System architecture design
+  • Multi-step code refactoring
+  • Security audit of code
+  • Complex data analysis
+
+EXPERT - Examples:
+  • Novel algorithm design with mathematical proofs
+  • Distributed systems consensus protocols
+  • Cryptographic implementation
+  • Cutting-edge research problems
+
+═══════════════════════════════════════════════════════════════════════════════
+RESPONSE FORMAT (JSON ONLY - No markdown!)
+═══════════════════════════════════════════════════════════════════════════════
 {{
-  "task_summary": "One sentence describing what this task actually does",
+  "task_summary": "One clear sentence describing the ACTUAL task",
   "task_category": "text_generation|code_generation|analysis|summarization|translation|classification|extraction|creative_writing|question_answering|agentic_workflow|multimodal|other",
   "actual_complexity": "trivial|simple|moderate|complex|expert",
-  "complexity_reasoning": "Why you assessed this complexity level (2-3 sentences)",
+  "complexity_reasoning": "2-3 sentences explaining your assessment based on ACTUAL task difficulty",
   "requires_vision": false,
   "requires_audio": false,
   "requires_extended_reasoning": false,
   "requires_long_context": false,
-  "minimum_capable_tier": "budget|standard|premium|frontier - the MINIMUM tier that can handle this task well",
+  "requires_tool_use": false,
+  "is_agentic_task": false,
+  "minimum_capable_tier": "budget|standard|premium|frontier",
   "is_model_appropriate": true/false,
-  "appropriateness_reasoning": "Explain whether the model is appropriate, overkill, or underpowered. Be specific about WHY.",
+  "appropriateness_reasoning": "Clear explanation with specific justification",
   "estimated_output_tokens": 100
 }}
 
-CRITICAL: Only mark is_model_appropriate=false if the model is significantly OVERKILL for the task.
-A trivial task using a frontier model = inappropriate (overkill).
-A complex task using a budget model = inappropriate (underpowered).
-A moderate task using a standard model = appropriate.
-
-Return ONLY the JSON object."""
+RETURN ONLY THE JSON OBJECT. NO MARKDOWN. NO EXPLANATION."""
 
     try:
         response = client.responses.create(
             model="gpt-5.2",
             input=analysis_prompt,
-            max_output_tokens=600
+            max_output_tokens=800
         )
         
         response_text = response.output_text.strip()
@@ -344,6 +539,8 @@ Return ONLY the JSON object."""
             "requires_audio": False,
             "requires_extended_reasoning": False,
             "requires_long_context": False,
+            "requires_tool_use": False,
+            "is_agentic_task": False,
             "minimum_capable_tier": "standard",
             "is_model_appropriate": True,  # Default to appropriate if analysis fails
             "appropriateness_reasoning": "Unable to assess - defaulting to appropriate",
@@ -444,34 +641,47 @@ def metadata_extractor_agent(state: AgentState) -> AgentState:
     Agent 1: Metadata Extractor
     
     Responsibilities:
-    - Extract raw metadata from the intercepted API call
-    - Estimate token counts
+    - Extract comprehensive metadata from the intercepted API call
+    - Analyze tool usage, context complexity, reasoning requirements
+    - Estimate token counts and detect task signals
     - NO analysis, NO recommendations, NO model assessment
     
-    This agent simply structures the input data for Agent 2.
+    This agent structures rich input data for Agent 2.
     """
-    print("\n🔍 [Agent 1: Metadata Extractor] Extracting call metadata...")
+    print("\n🔍 [Agent 1: Metadata Extractor] Extracting comprehensive call metadata...")
     
     original_model = state.get('original_model', 'unknown')
     original_prompt = state.get('original_prompt', '')
     system_prompt = state.get('system_prompt', '')
     context = state.get('context', {})
     tools = state.get('tools', [])
+    reasoning_effort = state.get('reasoning_effort', None)
+    model_config = state.get('model_config', {})
+    conversation_history = state.get('conversation_history', [])
     
-    # Pure metadata extraction (no LLM call, no analysis)
+    # Comprehensive metadata extraction (no LLM call, no analysis)
     metadata = extract_metadata_only(
         system_prompt=system_prompt,
         user_prompt=original_prompt,
         model_id=original_model,
         context=context,
-        tools=tools
+        tools=tools,
+        reasoning_effort=reasoning_effort,
+        model_config=model_config,
+        conversation_history=conversation_history
     )
     
+    # Print raw metadata summary
+    has_system = bool(metadata.get('system_prompt', ''))
+    tool_list = metadata.get('tools', [])
     print(f"   ├─ Model: {original_model}")
     print(f"   ├─ Input tokens (est): {metadata['input_tokens_estimated']}")
-    print(f"   ├─ Has system prompt: {metadata['has_system_prompt']}")
-    print(f"   ├─ Has context: {metadata['has_context']}")
-    print(f"   └─ Tools: {metadata['tool_count']}")
+    print(f"   ├─ System prompt: {'✓' if has_system else '✗'} ({metadata['system_prompt_length']} chars)")
+    print(f"   ├─ User prompt: {metadata['user_prompt_length']} chars")
+    print(f"   ├─ Context: depth={metadata['context_depth']}, size={metadata['context_size_bytes']} bytes")
+    print(f"   ├─ Tools: {metadata['tool_count']} ({', '.join(tool_list[:3]) or 'none'})")
+    print(f"   ├─ Reasoning effort: {metadata['reasoning_effort']}")
+    print(f"   └─ Conversation: {metadata['conversation_turns']} turns, {metadata['conversation_tokens']} tokens")
     
     return {
         **state,
@@ -479,7 +689,7 @@ def metadata_extractor_agent(state: AgentState) -> AgentState:
         'messages': state.get('messages', []) + [{
             'role': 'agent',
             'agent': 'metadata_extractor',
-            'content': f"Extracted metadata: {json.dumps(metadata)}"
+            'content': f"Extracted raw metadata: {metadata['tool_count']} tools, {metadata['context_depth']} context depth"
         }]
     }
 
@@ -532,6 +742,7 @@ def analyzer_agent(state: AgentState) -> AgentState:
         user_prompt=original_prompt,
         model_id=original_model,
         model_card=current_model_info,
+        metadata=metadata,  # Pass the comprehensive metadata
         context=context,
         tools=tools
     )
@@ -550,10 +761,15 @@ def analyzer_agent(state: AgentState) -> AgentState:
     input_tokens = metadata.get('input_tokens_estimated', 100)
     current_carbon = calculate_carbon_cost(input_tokens, estimated_output, current_model_info)
     
+    # Calculate latency for current model
+    current_latency = estimate_latency(current_model_info, estimated_output)
+    
     # Calculate costs
     current_input_cost = (input_tokens / 1_000_000) * current_model_info.get('input_cost_per_1m', 0)
     current_output_cost = (estimated_output / 1_000_000) * current_model_info.get('output_cost_per_1m', 0)
     current_total_cost = current_input_cost + current_output_cost
+    
+    print(f"   ├─ Estimated latency: {current_latency['total_time_sec']}s ({current_latency['latency_tier']} tier)")
     
     # Only look for alternatives if model is NOT appropriate
     alternatives = []
@@ -578,6 +794,11 @@ def analyzer_agent(state: AgentState) -> AgentState:
             alt_total_cost = alt_input_cost + alt_output_cost
             alt_carbon = calculate_carbon_cost(input_tokens, estimated_output, model_info)
             
+            # Calculate latency for alternative
+            alt_latency = estimate_latency(model_info, estimated_output)
+            latency_savings_sec = current_latency['total_time_sec'] - alt_latency['total_time_sec']
+            latency_savings_percent = (latency_savings_sec / current_latency['total_time_sec'] * 100) if current_latency['total_time_sec'] > 0 else 0
+            
             cost_savings = current_total_cost - alt_total_cost
             cost_savings_percent = (cost_savings / current_total_cost * 100) if current_total_cost > 0 else 0
             
@@ -599,6 +820,9 @@ def analyzer_agent(state: AgentState) -> AgentState:
                 'carbon': alt_carbon,
                 'carbon_savings': carbon_savings,
                 'carbon_savings_percent': carbon_savings_percent,
+                'latency': alt_latency,
+                'latency_savings_sec': latency_savings_sec,
+                'latency_savings_percent': latency_savings_percent,
                 'best_for': model_info.get('best_for', []),
             })
         
@@ -612,6 +836,7 @@ def analyzer_agent(state: AgentState) -> AgentState:
     carbon_analysis = {
         'current_model_cost': current_total_cost,
         'current_model_carbon': current_carbon,
+        'current_model_latency': current_latency,
         'task_analysis': {
             'summary': analysis.get('task_summary', ''),
             'category': analysis.get('task_category', 'other'),
@@ -639,19 +864,21 @@ def analyzer_agent(state: AgentState) -> AgentState:
 
 
 # ============================================================================
-# AGENT 3: REPORTER (Generates human-readable output with reasoning)
+# AGENT 3: REVIEWER & REPORT GENERATOR (Review findings, generate comprehensive report)
 # ============================================================================
 
 def reporter_agent(state: AgentState) -> AgentState:
     """
-    Agent 3: Reporter
+    Agent 3: Reviewer & Report Generator
     
     Responsibilities:
-    - Generate human-readable summary
-    - If recommending a switch, explain WHY the alternative suits the task
-    - Provide clear reasoning for the recommendation (or lack thereof)
+    - Review the analysis from Agent 2
+    - Generate a comprehensive human-readable report
+    - If recommending a switch, provide MULTIPLE alternatives with GENERIC reasoning
+    - Each alternative should be justified with reasoning applicable to similar models
+    - Provide clear verdict: APPROPRIATE, OVERKILL, or UNDERPOWERED
     """
-    print("\n✅ [Agent 3: Reporter] Generating report...")
+    print("\n📋 [Agent 3: Reviewer & Report Generator] Reviewing analysis and generating report...")
     
     is_appropriate = state.get('is_model_appropriate', True)
     appropriateness_reasoning = state.get('appropriateness_reasoning', '')
@@ -659,6 +886,15 @@ def reporter_agent(state: AgentState) -> AgentState:
     alternatives = state.get('alternative_models', [])
     carbon_analysis = state.get('carbon_analysis', {})
     task_analysis = carbon_analysis.get('task_analysis', {})
+    metadata = state.get('metadata', {})
+    
+    # Determine verdict
+    if is_appropriate:
+        review_verdict = "APPROPRIATE"
+    elif "overkill" in appropriateness_reasoning.lower():
+        review_verdict = "OVERKILL"
+    else:
+        review_verdict = "UNDERPOWERED"
     
     # Format carbon display
     current_carbon = carbon_analysis.get('current_model_carbon', {})
@@ -668,147 +904,262 @@ def reporter_agent(state: AgentState) -> AgentState:
         # Model is appropriate - no recommendation needed
         recommendation = {
             'switch_recommended': False,
+            'verdict': review_verdict,
             'reason': 'Model choice is appropriate for this task',
             'current_model': current_model.get('display_name', 'Unknown'),
+            'recommended_alternatives': [],
+            'generic_reasoning': 'The selected model tier matches the task complexity.',
             'confidence': 'high'
         }
         
         summary = f"""
-🌱 AI-GAUGE ANALYSIS
-════════════════════════════════════════════════════════════════
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         🌱 AI-GAUGE ANALYSIS REPORT                          ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  VERDICT: ✅ MODEL CHOICE IS APPROPRIATE                                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 
-✅ MODEL CHOICE: APPROPRIATE
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📊 TASK ANALYSIS                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Task:          {task_analysis.get('summary', 'Unknown task')[:55]:<55} │
+│ Complexity:    {task_analysis.get('complexity', 'unknown').upper():<55} │
+│ Category:      {task_analysis.get('category', 'unknown'):<55} │
+│ Min Tier:      {task_analysis.get('minimum_tier', 'unknown'):<55} │
+└──────────────────────────────────────────────────────────────────────────────┘
 
-📊 TASK ANALYSIS
-   Task:         {task_analysis.get('summary', 'Unknown task')}
-   Complexity:   {task_analysis.get('complexity', 'unknown').upper()}
-   Category:     {task_analysis.get('category', 'unknown')}
-   
-📍 YOUR MODEL
-   Model:        {current_model.get('display_name', 'Unknown')} ({current_model.get('provider', '?')})
-   Cost:         ${carbon_analysis.get('current_model_cost', 0):.6f} for this request
-   Carbon:       {current_carbon_display}
-   
-💡 ASSESSMENT
-   {appropriateness_reasoning}
-   
-   Your model choice is well-suited for this task. No changes recommended.
-   
-════════════════════════════════════════════════════════════════
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📍 CURRENT MODEL                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Model:         {current_model.get('display_name', 'Unknown'):<55} │
+│ Provider:      {current_model.get('provider', 'Unknown'):<55} │
+│ Cost:          ${carbon_analysis.get('current_model_cost', 0):.6f} per request{' ':<36} │
+│ Carbon:        {current_carbon_display:<55} │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 💡 ASSESSMENT                                                                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ {appropriateness_reasoning[:72]:<72} │
+│                                                                              │
+│ Your model choice is well-suited for this task. No changes recommended.     │
+└──────────────────────────────────────────────────────────────────────────────┘
 """
-        print(f"   ├─ Recommendation: KEEP current model")
-        print(f"   └─ Reason: Model is appropriate for the task")
+        print(f"   ├─ Verdict: {review_verdict}")
+        print(f"   └─ Recommendation: KEEP current model")
         
     elif alternatives:
         # Model is NOT appropriate and we have alternatives
-        best_alt = alternatives[0]
+        # Build list of recommended alternatives with GENERIC reasoning
+        recommended_alternatives = []
+        alternatives_summary = ""
         
-        # Get the alternative's model card for reasoning
-        raw_alt_card = get_model_card(best_alt['model_id'])
-        alt_card = model_card_to_dict(raw_alt_card) or {}
-        
-        # Generate specific reasoning for why this alternative suits the task
-        recommendation_reasoning = generate_recommendation_reasoning(
+        # Generic reasoning that applies to all models in the recommended tier
+        minimum_tier = task_analysis.get('minimum_tier', 'budget')
+        generic_reasoning = generate_generic_tier_reasoning(
+            minimum_tier=minimum_tier,
             task_summary=task_analysis.get('summary', 'this task'),
-            current_model=current_model.get('display_name', 'current model'),
-            recommended_model=best_alt['name'],
-            recommended_card=alt_card,
-            appropriateness_reasoning=appropriateness_reasoning,
-            cost_savings_percent=best_alt['cost_savings_percent']
+            task_category=task_analysis.get('category', 'general'),
+            complexity=task_analysis.get('complexity', 'moderate')
         )
         
-        # Format carbon savings
-        carbon_savings_display = "unknown"
-        if best_alt.get('carbon_savings_percent') is not None:
-            carbon_savings_display = f"{best_alt['carbon_savings_percent']:.1f}%"
-        
-        alt_carbon_display = "unknown"
-        if best_alt.get('carbon', {}).get('co2_grams') is not None:
-            alt_carbon_display = f"{best_alt['carbon']['co2_grams']:.4f}g CO₂"
-        
+        # Process up to 4 alternatives
+        for i, alt in enumerate(alternatives[:4]):
+            raw_alt_card = get_model_card(alt['model_id'])
+            alt_card = model_card_to_dict(raw_alt_card) or {}
+            
+            carbon_savings_display = f"{alt.get('carbon_savings_percent', 0):.1f}%" if alt.get('carbon_savings_percent') else "N/A"
+            alt_carbon_display = f"{alt['carbon']['co2_grams']:.4f}g" if alt.get('carbon', {}).get('co2_grams') else "N/A"
+            
+            recommended_alternatives.append({
+                'model_id': alt['model_id'],
+                'name': alt['name'],
+                'provider': alt['provider'],
+                'cost': alt['total_cost'],
+                'cost_savings_percent': alt['cost_savings_percent'],
+                'carbon_savings_percent': alt.get('carbon_savings_percent'),
+                'best_for': alt_card.get('best_for', [])[:3]
+            })
+            
+            alternatives_summary += f"""
+│ Option {i+1}: {alt['name']:<20} ({alt['provider']})                        │
+│   Cost:    ${alt['total_cost']:.6f}  |  Savings: {alt['cost_savings_percent']:.1f}%  |  Carbon: {carbon_savings_display:<8} │"""
+
         recommendation = {
             'switch_recommended': True,
-            'recommended_model': best_alt['model_id'],
-            'recommended_model_name': best_alt['name'],
+            'verdict': review_verdict,
             'current_model': current_model.get('display_name', 'Unknown'),
-            'cost_savings_percent': best_alt['cost_savings_percent'],
-            'cost_savings_usd': best_alt['cost_savings'],
-            'carbon_savings_percent': best_alt.get('carbon_savings_percent'),
-            'reasoning': recommendation_reasoning,
-            'confidence': 'high' if best_alt['cost_savings_percent'] > 50 else 'medium',
+            'recommended_alternatives': recommended_alternatives,
+            'primary_recommendation': recommended_alternatives[0] if recommended_alternatives else None,
+            'generic_reasoning': generic_reasoning,
+            'confidence': 'high' if alternatives[0]['cost_savings_percent'] > 50 else 'medium',
             'alternatives_count': len(alternatives)
         }
         
         summary = f"""
-🌱 AI-GAUGE RECOMMENDATION
-════════════════════════════════════════════════════════════════
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                      🌱 AI-GAUGE RECOMMENDATION REPORT                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  VERDICT: ⚠️  MODEL CHOICE IS {review_verdict:<47} ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 
-⚠️  MODEL CHOICE: OVERKILL
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📊 TASK ANALYSIS                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Task:          {task_analysis.get('summary', 'Unknown task')[:55]:<55} │
+│ Complexity:    {task_analysis.get('complexity', 'unknown').upper():<55} │
+│ Category:      {task_analysis.get('category', 'unknown'):<55} │
+│ Min Tier:      {task_analysis.get('minimum_tier', 'unknown'):<55} │
+│                                                                              │
+│ Reasoning:     {task_analysis.get('complexity_reasoning', '')[:55]:<55} │
+└──────────────────────────────────────────────────────────────────────────────┘
 
-📊 TASK ANALYSIS
-   Task:         {task_analysis.get('summary', 'Unknown task')}
-   Complexity:   {task_analysis.get('complexity', 'unknown').upper()}
-   Category:     {task_analysis.get('category', 'unknown')}
-   Reasoning:    {task_analysis.get('complexity_reasoning', '')[:100]}...
-   
-📍 CURRENT MODEL (overkill)
-   Model:        {current_model.get('display_name', 'Unknown')} ({current_model.get('provider', '?')})
-   Cost:         ${carbon_analysis.get('current_model_cost', 0):.6f}
-   Carbon:       {current_carbon_display}
-   
-🔄 RECOMMENDED ALTERNATIVE
-   Model:        {best_alt['name']} ({best_alt['provider']})
-   Cost:         ${best_alt['total_cost']:.6f}
-   Carbon:       {alt_carbon_display}
-   
-💰 SAVINGS
-   Cost:         {best_alt['cost_savings_percent']:.1f}% (${best_alt['cost_savings']:.6f})
-   Carbon:       {carbon_savings_display}
-   
-💡 WHY THIS MODEL IS SUFFICIENT
-   {recommendation_reasoning}
-   
-════════════════════════════════════════════════════════════════
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📍 CURRENT MODEL (not recommended)                                           │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Model:         {current_model.get('display_name', 'Unknown'):<55} │
+│ Provider:      {current_model.get('provider', 'Unknown'):<55} │
+│ Cost:          ${carbon_analysis.get('current_model_cost', 0):.6f} per request{' ':<36} │
+│ Carbon:        {current_carbon_display:<55} │
+│                                                                              │
+│ Assessment:    {appropriateness_reasoning[:55]:<55} │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🔄 RECOMMENDED ALTERNATIVES                                                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Any of the following models can handle this task effectively:                │
+│{alternatives_summary}
+│                                                                              │
+│ ─────────────────────────────────────────────────────────────────────────── │
+│                                                                              │
+│ 💡 WHY THESE MODELS ARE SUFFICIENT (Generic Reasoning):                      │
+│                                                                              │
+│ {generic_reasoning[:70]:<70} │
+│ {generic_reasoning[70:140] if len(generic_reasoning) > 70 else '':<70} │
+│ {generic_reasoning[140:210] if len(generic_reasoning) > 140 else '':<70} │
+│                                                                              │
+│ All models in the {minimum_tier} tier share these capabilities and can      │
+│ successfully complete this type of task with similar quality.                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📈 POTENTIAL IMPACT                                                           │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Cost Savings:    Up to {alternatives[0]['cost_savings_percent']:.1f}% per request{' ':<39} │
+│ Carbon Savings:  Up to {alternatives[0].get('carbon_savings_percent') or 0:.1f}% reduction{' ':<38} │
+│ Latency Savings: Up to {alternatives[0].get('latency_savings_percent') or 0:.1f}% faster (~{alternatives[0].get('latency_savings_sec') or 0:.2f}s){' ':<18} │
+└──────────────────────────────────────────────────────────────────────────────┘
 """
-        print(f"   ├─ Recommendation: SWITCH to {best_alt['name']}")
-        print(f"   ├─ Cost savings: {best_alt['cost_savings_percent']:.1f}%")
-        print(f"   └─ Reason: {recommendation_reasoning[:60]}...")
+        print(f"   ├─ Verdict: {review_verdict}")
+        print(f"   ├─ Found {len(alternatives)} suitable alternatives")
+        for i, alt in enumerate(alternatives[:3]):
+            print(f"   │   {i+1}. {alt['name']} ({alt['provider']}) - saves {alt['cost_savings_percent']:.1f}%")
+        print(f"   └─ Generic reasoning: {generic_reasoning[:60]}...")
         
     else:
         # Model is NOT appropriate but no alternatives found
         recommendation = {
             'switch_recommended': False,
-            'reason': 'Model may be overkill but no suitable alternatives found',
+            'verdict': review_verdict,
+            'reason': 'Model may be overkill but no suitable alternatives found in our registry',
             'current_model': current_model.get('display_name', 'Unknown'),
+            'recommended_alternatives': [],
+            'generic_reasoning': 'Consider using smaller models from the same provider or exploring other providers.',
             'confidence': 'low'
         }
         
         summary = f"""
-🌱 AI-GAUGE ANALYSIS
-════════════════════════════════════════════════════════════════
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                      🌱 AI-GAUGE ANALYSIS REPORT                             ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  VERDICT: ⚠️  ANALYSIS INCONCLUSIVE                                          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 
-⚠️  ANALYSIS INCONCLUSIVE
-
-   {appropriateness_reasoning}
-   
-   However, we couldn't find suitable alternatives in our model registry.
-   Consider reviewing your model choice manually.
-   
-════════════════════════════════════════════════════════════════
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Assessment:                                                                  │
+│ {appropriateness_reasoning[:70]:<70} │
+│                                                                              │
+│ However, we couldn't find suitable alternatives in our model registry.       │
+│ Consider reviewing your model choice manually or exploring:                  │
+│   • Claude Haiku 3.5 (Anthropic) - fast, cost-effective                     │
+│   • GPT-4o-mini (OpenAI) - balanced performance                             │
+│   • Gemini 2.0 Flash Lite (Google) - budget-friendly                        │
+└──────────────────────────────────────────────────────────────────────────────┘
 """
-        print(f"   ├─ Recommendation: NONE (no alternatives found)")
-        print(f"   └─ Note: {appropriateness_reasoning[:50]}...")
+        print(f"   ├─ Verdict: {review_verdict}")
+        print(f"   └─ Note: No alternatives found in registry")
     
     return {
         **state,
         'recommendation': recommendation,
         'human_readable_summary': summary,
+        'review_verdict': review_verdict,
         'messages': state.get('messages', []) + [{
             'role': 'agent',
-            'agent': 'reporter',
-            'content': f"Final: switch_recommended={recommendation.get('switch_recommended', False)}"
+            'agent': 'reviewer',
+            'content': f"Review complete: verdict={review_verdict}, alternatives={len(recommendation.get('recommended_alternatives', []))}"
         }]
     }
+
+
+def generate_generic_tier_reasoning(
+    minimum_tier: str,
+    task_summary: str,
+    task_category: str,
+    complexity: str
+) -> str:
+    """
+    Generate generic reasoning that applies to ALL models in the recommended tier.
+    This ensures the reasoning is not specific to one model but explains why
+    any model at that tier level is sufficient.
+    """
+    tier_capabilities = {
+        'budget': {
+            'description': 'Budget-tier models (like Claude Haiku 3.5, GPT-4o-mini, Gemini Flash Lite)',
+            'capabilities': [
+                'handle simple text transformations and formatting',
+                'answer straightforward questions with factual accuracy',
+                'perform basic code generation and simple debugging',
+                'execute quick summarization and extraction tasks'
+            ],
+            'reasoning': 'These lightweight models excel at routine tasks with low latency and minimal cost. They have sufficient context understanding for simple instructions and can produce quality outputs for tasks that don\'t require deep reasoning or complex analysis.'
+        },
+        'standard': {
+            'description': 'Standard-tier models (like GPT-4o, Claude Sonnet 4.5, Gemini 2.5 Flash)',
+            'capabilities': [
+                'write production-quality code with error handling',
+                'perform multi-step analysis and reasoning',
+                'generate detailed documentation and reports',
+                'handle moderate complexity problem-solving'
+            ],
+            'reasoning': 'Standard models offer the ideal balance of capability and cost for most professional tasks. They can handle nuanced instructions, maintain context over longer conversations, and produce outputs that meet professional standards without the premium cost of frontier models.'
+        },
+        'premium': {
+            'description': 'Premium-tier models (like GPT-4.1, Claude Sonnet 4.5, Gemini 2.5 Pro)',
+            'capabilities': [
+                'architect complex systems and solutions',
+                'perform deep analysis with multiple considerations',
+                'handle specialized domain knowledge tasks',
+                'execute multi-step reasoning chains'
+            ],
+            'reasoning': 'Premium models are designed for complex professional work requiring sophisticated reasoning. They excel at tasks that need careful consideration of trade-offs, integration of multiple knowledge domains, and production of high-stakes outputs.'
+        },
+        'frontier': {
+            'description': 'Frontier-tier models (like GPT-5, Claude Opus 4.5, o3)',
+            'capabilities': [
+                'tackle novel research problems',
+                'perform expert-level reasoning and analysis',
+                'handle cutting-edge technical challenges',
+                'generate innovative solutions to complex problems'
+            ],
+            'reasoning': 'Frontier models represent the state-of-the-art in AI capability. They are essential for tasks requiring breakthrough thinking, expert-level knowledge synthesis, or handling unprecedented complexity that challenges even experienced professionals.'
+        }
+    }
+    
+    tier_info = tier_capabilities.get(minimum_tier, tier_capabilities['standard'])
+    
+    return f"{tier_info['description']} are well-suited for this {complexity} {task_category} task. {tier_info['reasoning']}"
 
 
 # ============================================================================
@@ -819,24 +1170,36 @@ def create_decision_graph() -> StateGraph:
     """
     Create the LangGraph workflow with 3 agents.
     
-    Flow: metadata_extractor -> analyzer -> reporter -> END
+    Flow: metadata_extractor -> analyzer -> reviewer -> END
     
-    Agent 1 (Extractor): Pure metadata extraction, no analysis
-    Agent 2 (Analyzer): Assess appropriateness, conditionally find alternatives
-    Agent 3 (Reporter): Generate human-readable output with reasoning
+    Agent 1 (Metadata Extractor): Comprehensive metadata extraction from intercepted call
+        - Extracts tools, context, reasoning effort, model config, conversation history
+        - Analyzes task signals (code, analysis, creative, reasoning indicators)
+        - NO analysis, NO recommendations
+    
+    Agent 2 (Analyzer): Assess model appropriateness using LLM
+        - Uses GPT-5.2 to analyze task complexity
+        - Determines if model is APPROPRIATE, OVERKILL, or UNDERPOWERED
+        - Finds alternatives only if model is inappropriate
+    
+    Agent 3 (Reviewer & Report Generator): Generate comprehensive report
+        - Reviews analysis from Agent 2
+        - Provides MULTIPLE model recommendations with GENERIC reasoning
+        - Reasoning applies to all models in the recommended tier
+        - Generates formatted human-readable report
     """
     workflow = StateGraph(AgentState)
     
-    # Add agent nodes (renamed for clarity)
+    # Add agent nodes
     workflow.add_node("metadata_extractor", metadata_extractor_agent)
     workflow.add_node("analyzer", analyzer_agent)
-    workflow.add_node("reporter", reporter_agent)
+    workflow.add_node("reviewer", reporter_agent)  # Renamed conceptually but keeping function name
     
     # Linear flow
     workflow.set_entry_point("metadata_extractor")
     workflow.add_edge("metadata_extractor", "analyzer")
-    workflow.add_edge("analyzer", "reporter")
-    workflow.add_edge("reporter", END)
+    workflow.add_edge("analyzer", "reviewer")
+    workflow.add_edge("reviewer", END)
     
     return workflow.compile()
 
@@ -850,7 +1213,10 @@ def analyze_llm_call(
     prompt: str,
     system_prompt: str = "",
     context: Optional[Dict[str, Any]] = None,
-    tools: Optional[List[str]] = None
+    tools: Optional[List[str]] = None,
+    reasoning_effort: Optional[str] = None,
+    model_config: Optional[Dict[str, Any]] = None,
+    conversation_history: Optional[List[Dict[str, str]]] = None
 ) -> Dict[str, Any]:
     """
     Main entry point for the decision module.
@@ -866,14 +1232,18 @@ def analyze_llm_call(
             input=[
                 {"role": "system", "content": "You are..."},
                 {"role": "user", "content": "Rewrite this..."}
-            ]
+            ],
+            tools=[{"type": "function", "function": {"name": "search"}}],
+            temperature=0.3
         )
         
         # Plugin extracts:
         analyze_llm_call(
             model="gpt-5.2",
             prompt="Rewrite this...",
-            system_prompt="You are..."
+            system_prompt="You are...",
+            tools=["search"],
+            model_config={"temperature": 0.3}
         )
     
     Args:
@@ -882,12 +1252,19 @@ def analyze_llm_call(
         system_prompt: System prompt if present
         context: Any context object passed to the call
         tools: List of tool/function names if using function calling
+        reasoning_effort: Reasoning effort level (none, low, medium, high, max)
+        model_config: Model configuration (temperature, max_tokens, top_p, etc.)
+        conversation_history: Previous conversation turns for context
     
     Returns:
         Dict containing:
-        - recommendation: Whether to switch and to what
+        - is_appropriate: Boolean - is the model choice appropriate?
+        - verdict: APPROPRIATE, OVERKILL, or UNDERPOWERED
+        - recommendation: Multiple recommended alternatives with generic reasoning
         - carbon_analysis: Detailed carbon/cost breakdown
-        - summary: Human-readable explanation
+        - alternatives: List of alternative models with savings
+        - summary: Human-readable report
+        - metadata: Extracted comprehensive metadata
     """
     graph = create_decision_graph()
     
@@ -897,6 +1274,9 @@ def analyze_llm_call(
         'system_prompt': system_prompt,
         'context': context or {},
         'tools': tools or [],
+        'reasoning_effort': reasoning_effort or 'none',
+        'model_config': model_config or {},
+        'conversation_history': conversation_history or [],
         'metadata': {},
         'is_model_appropriate': True,
         'appropriateness_reasoning': '',
@@ -905,6 +1285,7 @@ def analyze_llm_call(
         'carbon_analysis': {},
         'recommendation': {},
         'human_readable_summary': '',
+        'review_verdict': '',
         'messages': []
     }
     
@@ -916,10 +1297,12 @@ def analyze_llm_call(
     
     return {
         'is_appropriate': final_state.get('is_model_appropriate', True),
+        'verdict': final_state.get('review_verdict', 'UNKNOWN'),
         'recommendation': final_state.get('recommendation', {}),
         'carbon_analysis': final_state.get('carbon_analysis', {}),
         'alternatives': final_state.get('alternative_models', []),
         'summary': final_state.get('human_readable_summary', ''),
+        'metadata': final_state.get('metadata', {}),
         'messages': final_state.get('messages', [])
     }
 
@@ -933,71 +1316,6 @@ def analyze_llm_request(*args, **kwargs):
 # ============================================================================
 # CLI / DEMO
 # ============================================================================
-
-if __name__ == "__main__":
-    print("\n" + "🌿"*35)
-    print("       AI-GAUGE DECISION MODULE - Demo")
-    print("       (Simulating IDE Plugin Interception)")
-    print("🌿"*35)
-    
-    # This simulates an IDE plugin intercepting a developer's LLM call
-    # The plugin automatically extracts all parameters from the API call
-    
-    # SCENARIO: Developer uses GPT-5.2 for what looks complex but is trivial
-    # The elaborate system prompt and context make it APPEAR sophisticated,
-    # but the actual task is just rewriting one sentence.
-    
-    demo_system_prompt = """
-You are an elite AI communications specialist at a Fortune 500 developer tools company.
-Your expertise spans technical writing, UX copy, brand voice consistency, and conversion optimization.
-Apply the following frameworks:
-- AIDA (Attention, Interest, Desire, Action) for engagement
-- Plain language principles (Flesch-Kincaid Grade 8 or below)
-- Developer empathy mapping for audience resonance
-"""
-    
-    demo_prompt = """
-Rewrite the following onboarding tooltip to improve clarity and user engagement:
-
-ORIGINAL: "This extension helps you track LLM usage for greener prompts and lower costs."
-
-Apply all brand guidelines, audience insights, and engagement frameworks from the context.
-Deliver a single, refined sentence optimized for the specified constraints.
-
-Return exactly ONE sentence. No explanation, no alternatives, no preamble.
-"""
-    
-    demo_context = {
-        "company": {"name": "AI Gauge", "industry": "Developer Tools"},
-        "constraints": {"max_words": 30, "avoid": ["hype", "buzzwords"]},
-    }
-    
-    print("\n📡 IDE Plugin intercepted API call:")
-    print(f"   model='gpt-5.2'")
-    print(f"   prompt='{demo_prompt[:50]}...'")
-    print(f"   system_prompt='{demo_system_prompt[:40]}...'")
-    
-    # Run the 3-agent analysis
-    result = analyze_llm_call(
-        model="gpt-5.2",
-        prompt=demo_prompt,
-        system_prompt=demo_system_prompt,
-        context=demo_context
-    )
-    
-    # Print the human-readable summary
-    print(result['summary'])
-    
-    # Print structured output for integration
-    print("\n📋 Structured Output (for IDE integration):")
-    print("-" * 40)
-    output = {
-        'is_appropriate': result['is_appropriate'],
-        'recommendation': result['recommendation'],
-        'carbon_analysis': {
-            'current_cost': result['carbon_analysis'].get('current_model_cost'),
-            'current_carbon': result['carbon_analysis'].get('current_model_carbon'),
-            'task_complexity': result['carbon_analysis'].get('task_analysis', {}).get('complexity'),
-        }
-    }
-    print(json.dumps(output, indent=2, default=str))
+# NOTE: CLI/DEMO code has been moved to test_decision_module.py
+# Run: python test_decision_module.py
+# This file now serves as the core decision module library only.
