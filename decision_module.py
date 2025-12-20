@@ -47,6 +47,18 @@ from typing import TypedDict, List, Dict, Any, Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# Import local inference module for fine-tuned model
+try:
+    from local_inference import (
+        analyze_with_local_model,
+        is_local_model_available,
+        USE_LOCAL_MODEL
+    )
+    LOCAL_INFERENCE_AVAILABLE = True
+except ImportError:
+    LOCAL_INFERENCE_AVAILABLE = False
+    USE_LOCAL_MODEL = False
+
 # LangGraph imports
 from langgraph.graph import StateGraph, END
 
@@ -513,28 +525,35 @@ RESPONSE FORMAT (JSON ONLY - No markdown!)
 
 RETURN ONLY THE JSON OBJECT. NO MARKDOWN. NO EXPLANATION."""
 
-    try:
-        response = client.responses.create(
-            model="gpt-5.2",
-            input=analysis_prompt,
-            max_output_tokens=800
+    # ===========================================================================
+    # USE LOCAL FINE-TUNED MODEL ONLY (No GPT-5.2 fallback)
+    # ===========================================================================
+    if not LOCAL_INFERENCE_AVAILABLE:
+        raise RuntimeError("Local inference module not available. Install with: pip install llama-cpp-python")
+    
+    if not is_local_model_available():
+        raise RuntimeError(
+            "Local AI-Gauge model not found. Ensure ai-gauge-q4_k_m.gguf exists in training_data/models/"
         )
-        
-        response_text = response.output_text.strip()
-        # Remove markdown code fences if present
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
-            if response_text.startswith("json"):
-                response_text = response_text[4:].strip()
-        
-        return json.loads(response_text)
+    
+    print("🔄 Using local fine-tuned AI-Gauge model for analysis...")
+    try:
+        result = analyze_with_local_model(
+            system_prompt=metadata.get('system_prompt', ''),
+            user_prompt=metadata.get('user_prompt', ''),
+            model_id=model_id,
+            metadata=metadata
+        )
+        print("✅ Local model analysis complete")
+        return result
     except Exception as e:
+        # Return safe defaults on error (no external API fallback)
+        print(f"⚠️  Local model inference failed: {e}")
         return {
-            "task_summary": "Unable to analyze",
+            "task_summary": "Unable to analyze - local model error",
             "task_category": "other",
             "actual_complexity": "moderate",
-            "complexity_reasoning": f"Analysis failed: {str(e)[:50]}",
+            "complexity_reasoning": f"Local analysis failed: {str(e)[:50]}",
             "requires_vision": False,
             "requires_audio": False,
             "requires_extended_reasoning": False,
@@ -542,10 +561,96 @@ RETURN ONLY THE JSON OBJECT. NO MARKDOWN. NO EXPLANATION."""
             "requires_tool_use": False,
             "is_agentic_task": False,
             "minimum_capable_tier": "standard",
-            "is_model_appropriate": True,  # Default to appropriate if analysis fails
+            "is_model_appropriate": True,  # Conservative default
             "appropriateness_reasoning": "Unable to assess - defaulting to appropriate",
             "estimated_output_tokens": 200
         }
+
+
+# =============================================================================
+# TIER COMPARISON LOGIC
+# =============================================================================
+
+# Model tier rankings (higher = more capable/expensive)
+TIER_RANKINGS = {
+    'budget': 1,
+    'standard': 2,
+    'premium': 3,
+    'frontier': 4
+}
+
+# Map model IDs to their tiers
+MODEL_TO_TIER = {
+    # Budget tier
+    'gpt-4o-mini': 'budget',
+    'gpt-4.1-nano': 'budget',
+    'gpt-5-nano': 'budget',
+    'claude-haiku-4-5-20251001': 'budget',
+    'claude-3-5-haiku-latest': 'budget',
+    'gemini-2.0-flash-lite': 'budget',
+    'gemini-2.5-flash-lite-preview-06-17': 'budget',
+    # Standard tier
+    'gpt-4o': 'standard',
+    'gpt-4.1-mini': 'standard',
+    'gpt-4.1': 'standard',
+    'gpt-5-mini': 'standard',
+    'claude-sonnet-4-5-20250929': 'standard',
+    'claude-3-5-sonnet-latest': 'standard',
+    'gemini-2.5-flash': 'standard',
+    'gemini-2.0-flash': 'standard',
+    # Premium tier
+    'o4-mini': 'premium',
+    'gemini-2.5-pro': 'premium',
+    'gemini-2.5-pro-preview-06-05': 'premium',
+    # Frontier tier
+    'gpt-5': 'frontier',
+    'gpt-5.2': 'frontier',
+    'gpt-5.2-pro': 'frontier',
+    'o3': 'frontier',
+    'claude-opus-4-5-20251101': 'frontier',
+    'claude-opus-4-5': 'frontier',
+    'gemini-3-pro-preview': 'frontier',
+}
+
+
+def get_model_tier(model_id: str) -> str:
+    """Get the tier of a model by its ID."""
+    # Direct lookup
+    if model_id in MODEL_TO_TIER:
+        return MODEL_TO_TIER[model_id]
+    
+    # Fuzzy matching for common patterns
+    model_lower = model_id.lower()
+    
+    # Frontier indicators
+    if any(x in model_lower for x in ['gpt-5.2', 'gpt5.2', 'opus', 'gemini-3', 'o3']):
+        return 'frontier'
+    if 'gpt-5' in model_lower and 'mini' not in model_lower and 'nano' not in model_lower:
+        return 'frontier'
+    
+    # Premium indicators
+    if any(x in model_lower for x in ['o4-mini', 'gemini-2.5-pro']):
+        return 'premium'
+    
+    # Budget indicators
+    if any(x in model_lower for x in ['mini', 'nano', 'haiku', 'flash-lite', 'lite']):
+        return 'budget'
+    
+    # Standard is the default
+    return 'standard'
+
+
+def is_model_overkill(current_model_id: str, minimum_tier: str) -> bool:
+    """
+    Determine if the current model is overkill for the task.
+    
+    Returns True if current model tier is higher than minimum required tier.
+    """
+    current_tier = get_model_tier(current_model_id)
+    current_rank = TIER_RANKINGS.get(current_tier, 2)
+    minimum_rank = TIER_RANKINGS.get(minimum_tier, 2)
+    
+    return current_rank > minimum_rank
 
 
 def get_alternative_models(
@@ -752,10 +857,21 @@ def analyzer_agent(state: AgentState) -> AgentState:
     minimum_tier = analysis.get('minimum_capable_tier', 'standard')
     estimated_output = analysis.get('estimated_output_tokens', 200)
     
+    # CRITICAL: Override is_appropriate based on tier comparison
+    # Even if the local model says "appropriate", check if the current model
+    # tier is higher than the minimum required tier (= overkill)
+    model_overkill = is_model_overkill(original_model, minimum_tier)
+    if model_overkill:
+        is_appropriate = False
+        current_tier = get_model_tier(original_model)
+        if not appropriateness_reasoning or 'appropriate' in appropriateness_reasoning.lower():
+            appropriateness_reasoning = f"Model is OVERKILL: Using {current_tier} tier model for a task that only requires {minimum_tier} tier. This wastes compute resources and increases costs unnecessarily."
+    
     print(f"   ├─ Task: {analysis.get('task_summary', 'unknown')[:50]}...")
     print(f"   ├─ Complexity: {analysis.get('actual_complexity', 'unknown').upper()}")
     print(f"   ├─ Minimum tier needed: {minimum_tier}")
-    print(f"   ├─ Model appropriate: {'✅ YES' if is_appropriate else '❌ NO'}")
+    print(f"   ├─ Current model tier: {get_model_tier(original_model)}")
+    print(f"   ├─ Model appropriate: {'✅ YES' if is_appropriate else '❌ NO (OVERKILL)' if model_overkill else '❌ NO'}")
     
     # Calculate carbon for current model
     input_tokens = metadata.get('input_tokens_estimated', 100)
@@ -888,10 +1004,14 @@ def reporter_agent(state: AgentState) -> AgentState:
     task_analysis = carbon_analysis.get('task_analysis', {})
     metadata = state.get('metadata', {})
     
-    # Determine verdict
+    # Get current and minimum tier for overkill detection
+    current_model_id = current_model.get('model_id', '')
+    minimum_tier = task_analysis.get('minimum_tier', 'standard')
+    
+    # Determine verdict - check for overkill using tier comparison
     if is_appropriate:
         review_verdict = "APPROPRIATE"
-    elif "overkill" in appropriateness_reasoning.lower():
+    elif is_model_overkill(current_model_id, minimum_tier) or "overkill" in appropriateness_reasoning.lower():
         review_verdict = "OVERKILL"
     else:
         review_verdict = "UNDERPOWERED"
