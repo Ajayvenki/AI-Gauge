@@ -168,6 +168,7 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+test_samples/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
@@ -212,3 +213,4 @@ training_data/
 VALUE_PROPOSITION.md
 ide_plugin/
 test_decision_module.py
+.DS_Store
