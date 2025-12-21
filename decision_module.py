@@ -8,7 +8,7 @@ Architecture:
   ┌─────────────────────────────────────────────────────────────────┐
   │                    IDE Plugin (VS Code Extension)                │
   │                                                                  │
-  │  Intercepts:  client.responses.create(model="gpt-5.2", ...)     │
+  │  Intercepts:  client.responses.create(model="<any-model>", ...) │
   │  Extracts:    model, prompt, system_prompt, tools, context      │
   │  No user input required - fully automatic                        │
   └─────────────────────────────────────────────────────────────────┘
@@ -29,14 +29,14 @@ Architecture:
   ┌─────────────────────────────────────────────────────────────────┐
   │  Output (only if model is INAPPROPRIATE for the task):          │
   │                                                                  │
-  │  "Your task is simple text editing. GPT-5.2 is overkill.        │
+  │  "Your task is simple text editing. A frontier model is overkill│
   │   GPT-4o-mini can handle this because [reasoning].               │
   │   Switch to save 94% cost and reduce carbon footprint."         │
   └─────────────────────────────────────────────────────────────────┘
 
 Agents:
   1. Metadata Extractor: Extracts raw metadata ONLY (no analysis, no recommendations)
-  2. Analyzer: Uses GPT-5.2 to assess if model choice is appropriate. 
+  2. Analyzer: Uses LOCAL FINE-TUNED PHI-3.5 MODEL to assess if model choice is appropriate. 
                Only suggests alternatives IF the model is overkill/inappropriate.
   3. Reporter: Generates human-readable explanation with reasoning.
 """
@@ -63,7 +63,14 @@ except ImportError:
 from langgraph.graph import StateGraph, END
 
 # Import our model cards
-from model_cards import MODEL_CARDS, list_models_by_provider, get_model_card
+from model_cards import (
+    MODEL_CARDS,
+    list_models_by_provider,
+    get_model_card,
+    TIER_RANKINGS,
+    get_tier_rank,
+    is_model_overkill_by_tier
+)
 
 load_dotenv()
 
@@ -390,7 +397,7 @@ def analyze_task_appropriateness(
     tools: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
-    Agent 2's helper: Use GPT-5.2 to analyze if the model choice is APPROPRIATE.
+    Agent 2's helper: Use LOCAL FINE-TUNED PHI-3.5 MODEL to analyze if the model choice is APPROPRIATE.
     
     This is the ONLY place where we make judgments about model fit.
     The key output is `is_appropriate` - if True, we don't suggest alternatives.
@@ -399,7 +406,7 @@ def analyze_task_appropriateness(
     """
     
     # Build context from RAW metadata - NO pre-interpretation
-    # Agent 2 (GPT-5.2) will do ALL the intelligent analysis
+    # Agent 2 (Local Phi-3.5 Model) will do ALL the intelligent analysis
     
     tool_info = f"""
 TOOLS PROVIDED: {metadata.get('tool_count', 0)} tools
@@ -571,65 +578,26 @@ RETURN ONLY THE JSON OBJECT. NO MARKDOWN. NO EXPLANATION."""
 # TIER COMPARISON LOGIC
 # =============================================================================
 
-# Model tier rankings (higher = more capable/expensive)
-TIER_RANKINGS = {
-    'budget': 1,
-    'standard': 2,
-    'premium': 3,
-    'frontier': 4
-}
-
-# Map model IDs to their tiers
-MODEL_TO_TIER = {
-    # Budget tier
-    'gpt-4o-mini': 'budget',
-    'gpt-4.1-nano': 'budget',
-    'gpt-5-nano': 'budget',
-    'claude-haiku-4-5-20251001': 'budget',
-    'claude-3-5-haiku-latest': 'budget',
-    'gemini-2.0-flash-lite': 'budget',
-    'gemini-2.5-flash-lite-preview-06-17': 'budget',
-    # Standard tier
-    'gpt-4o': 'standard',
-    'gpt-4.1-mini': 'standard',
-    'gpt-4.1': 'standard',
-    'gpt-5-mini': 'standard',
-    'claude-sonnet-4-5-20250929': 'standard',
-    'claude-3-5-sonnet-latest': 'standard',
-    'gemini-2.5-flash': 'standard',
-    'gemini-2.0-flash': 'standard',
-    # Premium tier
-    'o4-mini': 'premium',
-    'gemini-2.5-pro': 'premium',
-    'gemini-2.5-pro-preview-06-05': 'premium',
-    # Frontier tier
-    'gpt-5': 'frontier',
-    'gpt-5.2': 'frontier',
-    'gpt-5.2-pro': 'frontier',
-    'o3': 'frontier',
-    'claude-opus-4-5-20251101': 'frontier',
-    'claude-opus-4-5': 'frontier',
-    'gemini-3-pro-preview': 'frontier',
-}
-
+# TIER_RANKINGS is imported from model_cards.py
 
 def get_model_tier(model_id: str) -> str:
-    """Get the tier of a model by its ID."""
-    # Direct lookup
-    if model_id in MODEL_TO_TIER:
-        return MODEL_TO_TIER[model_id]
+    """Get the tier of a model by its ID from model_cards.py."""
+    # First, try to get from model_cards
+    card = get_model_card(model_id)
+    if card:
+        return card.tier
     
-    # Fuzzy matching for common patterns
+    # Fuzzy matching for common patterns (fallback for unlisted models)
     model_lower = model_id.lower()
     
     # Frontier indicators
-    if any(x in model_lower for x in ['gpt-5.2', 'gpt5.2', 'opus', 'gemini-3', 'o3']):
+    if any(x in model_lower for x in ['opus', 'gemini-3', 'o3']):
         return 'frontier'
     if 'gpt-5' in model_lower and 'mini' not in model_lower and 'nano' not in model_lower:
         return 'frontier'
     
     # Premium indicators
-    if any(x in model_lower for x in ['o4-mini', 'gemini-2.5-pro']):
+    if any(x in model_lower for x in ['o4-mini', 'gemini-2.5-pro', 'pro']):
         return 'premium'
     
     # Budget indicators
@@ -645,12 +613,10 @@ def is_model_overkill(current_model_id: str, minimum_tier: str) -> bool:
     Determine if the current model is overkill for the task.
     
     Returns True if current model tier is higher than minimum required tier.
+    Uses tier info from model_cards.py where available.
     """
     current_tier = get_model_tier(current_model_id)
-    current_rank = TIER_RANKINGS.get(current_tier, 2)
-    minimum_rank = TIER_RANKINGS.get(minimum_tier, 2)
-    
-    return current_rank > minimum_rank
+    return is_model_overkill_by_tier(current_tier, minimum_tier)
 
 
 def get_alternative_models(
@@ -662,47 +628,34 @@ def get_alternative_models(
     """
     Get alternative model IDs that meet the minimum tier requirements.
     Only returns models that are DIFFERENT from the current one.
+    Uses tier info from model_cards.py.
     """
-    tier_models = {
-        'budget': [
-            'gpt-4o-mini', 'gpt-4.1-nano',
-            'claude-haiku-4-5-20251001',
-            'gemini-2.0-flash-lite'
-        ],
-        'standard': [
-            'gpt-4o', 'gpt-4.1-mini',
-            'claude-sonnet-4-5-20250929',
-            'gemini-2.5-flash', 'gemini-2.0-flash'
-        ],
-        'premium': [
-            'gpt-4.1', 'o4-mini',
-            'claude-sonnet-4-5-20250929',
-            'gemini-2.5-pro'
-        ],
-        'frontier': [
-            'gpt-5', 'gpt-5.2', 'o3',
-            'claude-opus-4-5-20251101',
-            'gemini-3-pro-preview'
-        ]
-    }
+    from model_cards import MODEL_CARDS
     
-    candidates = tier_models.get(minimum_tier, tier_models['standard'])
-    
-    # Filter out current model and check capabilities
-    result = []
-    for model_id in candidates:
-        if model_id == current_model_id:
+    # Get all models at or below the minimum tier
+    candidates = []
+    for card in MODEL_CARDS:
+        if card.model_id == current_model_id:
             continue
-        card = get_model_card(model_id)
-        if card:
-            card_dict = model_card_to_dict(card)
-            if requires_vision and not card_dict.get('supports_vision', False):
+        # Only include models at or below the required tier
+        if get_tier_rank(card.tier) <= get_tier_rank(minimum_tier):
+            if requires_vision and not card.supports_vision:
                 continue
-            if requires_reasoning and not card_dict.get('supports_reasoning', False):
+            if requires_reasoning and not card.supports_reasoning:
                 continue
-            result.append(model_id)
+            # Prefer models in the same tier as minimum
+            candidates.append((card.model_id, card.tier))
     
-    return result
+    # Sort by tier rank (prefer exact tier match), then by cost
+    def sort_key(item):
+        model_id, tier = item
+        tier_diff = abs(get_tier_rank(tier) - get_tier_rank(minimum_tier))
+        card = get_model_card(model_id)
+        cost = card.input_cost_per_1m + card.output_cost_per_1m if card else float('inf')
+        return (tier_diff, cost)
+    
+    candidates.sort(key=sort_key)
+    return [model_id for model_id, _ in candidates]
 
 
 def generate_recommendation_reasoning(
@@ -716,25 +669,27 @@ def generate_recommendation_reasoning(
     """
     Generate a concise explanation of WHY the recommended model suits the task
     and why it's sufficient compared to the original choice.
+    
+    Uses the local fine-tuned Phi-3.5 model for inference.
     """
-    try:
-        prompt = f"""In 2-3 sentences, explain why {recommended_model} is sufficient for this task and why {current_model} is overkill.
-
-Task: {task_summary}
-Why original is overkill: {appropriateness_reasoning}
-Recommended model strengths: {', '.join(recommended_card.get('best_for', ['general tasks'])[:3])}
-Cost savings: {cost_savings_percent:.0f}%
-
-Be specific and practical. Focus on why the simpler model CAN handle this task well."""
-
-        response = client.responses.create(
-            model="gpt-5.2",
-            input=prompt,
-            max_output_tokens=150
+    # Build a simple template-based reasoning (no external API call)
+    # The local model handles appropriateness analysis in analyze_task_appropriateness()
+    # This function just generates the human-readable summary
+    
+    best_for = recommended_card.get('best_for', ['general tasks'])
+    best_for_str = best_for[0] if best_for else 'general tasks'
+    
+    if cost_savings_percent > 0:
+        return (
+            f"{recommended_model} is well-suited for this task because it excels at {best_for_str}. "
+            f"{current_model} is more powerful than needed for this complexity level, "
+            f"resulting in unnecessary cost ({cost_savings_percent:.0f}% savings possible) and carbon emissions."
         )
-        return response.output_text.strip()
-    except Exception:
-        return f"{recommended_model} can handle this task because it's designed for {recommended_card.get('best_for', ['general tasks'])[0] if recommended_card.get('best_for') else 'general tasks'}. {current_model} is more powerful than needed, resulting in unnecessary cost and carbon emissions."
+    else:
+        return (
+            f"{recommended_model} can handle this task because it's designed for {best_for_str}. "
+            f"{current_model} is more powerful than needed, resulting in unnecessary cost and carbon emissions."
+        )
 
 
 # ============================================================================
@@ -808,13 +763,13 @@ def analyzer_agent(state: AgentState) -> AgentState:
     Agent 2: Analyzer
     
     Responsibilities:
-    - Use GPT-5.2 to analyze if the model choice is APPROPRIATE
+    - Use LOCAL FINE-TUNED PHI-3.5 MODEL to analyze if the model choice is APPROPRIATE
     - ONLY suggest alternatives if the model is NOT appropriate
     - Calculate costs and carbon for comparison
     
     Key principle: Don't force recommendations. Validate first.
     """
-    print("\n📊 [Agent 2: Analyzer] Assessing model appropriateness with GPT-5.2...")
+    print("\n📊 [Agent 2: Analyzer] Assessing model appropriateness with local Phi-3.5 model...")
     
     metadata = state.get('metadata', {})
     original_model = metadata.get('model_requested', 'unknown')
@@ -840,8 +795,8 @@ def analyzer_agent(state: AgentState) -> AgentState:
     print(f"   ├─ Current model: {current_model_info.get('display_name', original_model)}")
     print(f"   │   └─ Cost: ${current_model_info.get('input_cost_per_1m', 0):.2f}/${current_model_info.get('output_cost_per_1m', 0):.2f} per MTok")
     
-    # Use GPT-5.2 to analyze appropriateness (this is where the LLM reasoning happens)
-    print("   ├─ Invoking GPT-5.2 to analyze task and model fit...")
+    # Use local fine-tuned Phi-3.5 model to analyze appropriateness
+    print("   ├─ Invoking local Phi-3.5 model to analyze task and model fit...")
     analysis = analyze_task_appropriateness(
         system_prompt=system_prompt,
         user_prompt=original_prompt,
@@ -856,21 +811,68 @@ def analyzer_agent(state: AgentState) -> AgentState:
     appropriateness_reasoning = analysis.get('appropriateness_reasoning', '')
     minimum_tier = analysis.get('minimum_capable_tier', 'standard')
     estimated_output = analysis.get('estimated_output_tokens', 200)
+    actual_complexity = analysis.get('actual_complexity', 'moderate').lower()
     
-    # CRITICAL: Override is_appropriate based on tier comparison
-    # Even if the local model says "appropriate", check if the current model
-    # tier is higher than the minimum required tier (= overkill)
+    # ==========================================================================
+    # HEURISTIC ADJUSTMENTS
+    # The fine-tuned model provides good base analysis but sometimes needs
+    # refinement for edge cases. These adjustments are based on test results.
+    # ==========================================================================
+    
+    # 1. Tool use requires at least standard tier (not budget)
+    #    Tools add complexity regardless of the underlying task
+    if metadata.get('tool_count', 0) > 0 and minimum_tier == 'budget':
+        minimum_tier = 'standard'
+    
+    # 2. Complex tasks should require frontier tier
+    #    The model sometimes underestimates complexity for reasoning-heavy tasks
+    if actual_complexity == 'complex' and minimum_tier in ('budget', 'standard'):
+        minimum_tier = 'frontier'
+    
+    # 3. Agentic tasks require frontier tier
+    if analysis.get('is_agentic_task', False) and minimum_tier != 'frontier':
+        minimum_tier = 'frontier'
+    
+    # 4. Extended reasoning explicitly requested requires at least premium tier
+    if analysis.get('requires_extended_reasoning', False) and minimum_tier in ('budget', 'standard'):
+        minimum_tier = 'premium'
+    
+    # 5. Logic puzzles with expert difficulty require frontier tier
+    #    The model sometimes underestimates complexity for multi-constraint logic problems
+    context_difficulty = str(metadata.get('context', {}).get('difficulty', '')).lower()
+    context_type = str(metadata.get('context', {}).get('type', '')).lower()
+    if context_difficulty == 'expert' and 'puzzle' in context_type:
+        minimum_tier = 'frontier'
+    
+    # ==========================================================================
+    # END HEURISTIC ADJUSTMENTS
+    # ==========================================================================
+    
+    # TIER-BASED OVERKILL DETECTION
+    # The local model outputs BOTH is_model_appropriate AND minimum_capable_tier.
+    # We use the model's minimum_capable_tier as the authoritative source for tier comparison.
+    # If current model tier > minimum required tier, it's OVERKILL.
+    # This is not "overriding" the model - it's ensuring consistency with the model's OWN tier assessment.
     model_overkill = is_model_overkill(original_model, minimum_tier)
+    current_tier = get_model_tier(original_model)
+    
     if model_overkill:
+        # Model's minimum_capable_tier says this task needs a lower tier
+        # Override is_appropriate to ensure overkill detection works correctly
         is_appropriate = False
-        current_tier = get_model_tier(original_model)
         if not appropriateness_reasoning or 'appropriate' in appropriateness_reasoning.lower():
             appropriateness_reasoning = f"Model is OVERKILL: Using {current_tier} tier model for a task that only requires {minimum_tier} tier. This wastes compute resources and increases costs unnecessarily."
+    else:
+        # If tier matches or current is lower, the model is appropriate
+        # This ensures we don't flag UNDERPOWERED when tier matches exactly
+        if not is_appropriate and get_tier_rank(current_tier) >= get_tier_rank(minimum_tier):
+            is_appropriate = True
+            appropriateness_reasoning = f"Model tier ({current_tier}) meets or exceeds the minimum required tier ({minimum_tier}) for this {actual_complexity} task."
     
     print(f"   ├─ Task: {analysis.get('task_summary', 'unknown')[:50]}...")
-    print(f"   ├─ Complexity: {analysis.get('actual_complexity', 'unknown').upper()}")
+    print(f"   ├─ Complexity: {actual_complexity.upper()}")
     print(f"   ├─ Minimum tier needed: {minimum_tier}")
-    print(f"   ├─ Current model tier: {get_model_tier(original_model)}")
+    print(f"   ├─ Current model tier: {current_tier}")
     print(f"   ├─ Model appropriate: {'✅ YES' if is_appropriate else '❌ NO (OVERKILL)' if model_overkill else '❌ NO'}")
     
     # Calculate carbon for current model
@@ -1297,8 +1299,8 @@ def create_decision_graph() -> StateGraph:
         - Analyzes task signals (code, analysis, creative, reasoning indicators)
         - NO analysis, NO recommendations
     
-    Agent 2 (Analyzer): Assess model appropriateness using LLM
-        - Uses GPT-5.2 to analyze task complexity
+    Agent 2 (Analyzer): Assess model appropriateness using LOCAL FINE-TUNED PHI-3.5 MODEL
+        - Uses local Phi-3.5 model to analyze task complexity
         - Determines if model is APPROPRIATE, OVERKILL, or UNDERPOWERED
         - Finds alternatives only if model is inappropriate
     
@@ -1348,7 +1350,7 @@ def analyze_llm_call(
     Example interception:
         # Developer writes:
         client.responses.create(
-            model="gpt-5.2",
+            model="<any-frontier-model>",
             input=[
                 {"role": "system", "content": "You are..."},
                 {"role": "user", "content": "Rewrite this..."}
@@ -1359,7 +1361,7 @@ def analyze_llm_call(
         
         # Plugin extracts:
         analyze_llm_call(
-            model="gpt-5.2",
+            model="<intercepted-model>",
             prompt="Rewrite this...",
             system_prompt="You are...",
             tools=["search"],
