@@ -41,18 +41,25 @@ def get_model() -> Optional["Llama"]:
     
     if _model_instance is None:
         if not MODEL_PATH.exists():
-            print(f"⚠️  Model not found at: {MODEL_PATH}")
+            # Silent fail - model not found
             return None
         
-        print(f"🔄 Loading fine-tuned AI-Gauge model from: {MODEL_PATH}")
-        _model_instance = Llama(
-            model_path=str(MODEL_PATH),
-            n_ctx=4096,           # Context window
-            n_threads=4,          # CPU threads
-            n_gpu_layers=-1,      # Use all GPU layers (Metal on Mac)
-            verbose=False
-        )
-        print("✅ Model loaded successfully!")
+        # Suppress llama.cpp verbose output during loading
+        import sys
+        import os
+        old_stderr = sys.stderr
+        sys.stderr = open(os.devnull, 'w')
+        try:
+            _model_instance = Llama(
+                model_path=str(MODEL_PATH),
+                n_ctx=4096,           # Context window
+                n_threads=4,          # CPU threads
+                n_gpu_layers=-1,      # Use all GPU layers (Metal on Mac)
+                verbose=False
+            )
+        finally:
+            sys.stderr.close()
+            sys.stderr = old_stderr
     
     return _model_instance
 

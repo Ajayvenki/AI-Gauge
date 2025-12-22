@@ -1,90 +1,102 @@
 # AI-Gauge 🌱
 
-**Intelligent LLM Cost & Carbon Optimization**
+**LLM Cost & Carbon Optimizer** - Detects when you're overpaying for AI and suggests cheaper alternatives.
 
-AI-Gauge analyzes LLM API calls in your code and recommends more cost-effective and environmentally friendly model alternatives when appropriate.
+## What It Does
 
-## Key Features
+```python
+# Before: Using $15/1M model for a typo fix ❌
+response = client.chat.completions.create(
+    model="gpt-5.2",
+    messages=[{"role": "user", "content": "Fix typo: 'teh'"}]
+)
 
-- 🔍 **Overkill Detection**: Detects when frontier models are used for simple tasks
-- 💰 **Cost Savings**: Suggests cheaper alternatives with comparable quality
-- 🌱 **Carbon Awareness**: Uses carbon factor estimates based on academic research
-- 🚀 **Local Inference**: Fine-tuned Phi-3.5 model runs entirely on your machine
-- 🔌 **IDE Plugin**: VS Code extension with inline hints and quick fixes
-
-## Test Results
-
+# AI-Gauge says: 💡 OVERKILL! Use gpt-4o-mini instead
+# → Saves 99% cost, reduces CO₂ by 94%
 ```
-✅ Pass Rate: 20/20 (100%)
-├─ OVERKILL Detection:   10/10 passed
-└─ APPROPRIATE Validation: 10/10 passed
-```
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                         3-Agent Pipeline                          │
-├──────────────────────────────────────────────────────────────────┤
-│  Agent 1: Metadata Extractor                                      │
-│    └─ Parses model, tokens, tools, system prompt                  │
-│                                                                    │
-│  Agent 2: Analyzer (Fine-tuned Phi-3.5)                           │
-│    └─ Assesses task complexity & minimum tier needed              │
-│    └─ Heuristic adjustments for edge cases                        │
-│                                                                    │
-│  Agent 3: Report Generator                                        │
-│    └─ Produces verdict: OVERKILL | APPROPRIATE | UNDERPOWERED     │
-│    └─ Recommends alternatives with cost/carbon savings            │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-## Model Tier System
-
-| Tier | Examples | Carbon Factor | Use Case |
-|------|----------|---------------|----------|
-| **Budget** | GPT-4o-mini, Claude Haiku | 0.3-1.0 | Simple tasks, trivial queries |
-| **Standard** | GPT-4o, Claude Sonnet | 1.0-2.5 | Code review, moderate analysis |
-| **Premium** | GPT-4.1, Claude 4 | 3.0-5.0 | Complex reasoning, research |
-| **Frontier** | GPT-5.2, o3, Claude Opus | 8.0-12.0 | Agentic tasks, expert puzzles |
-
-## Carbon Factor References
-
-Based on peer-reviewed research:
-- Patterson et al. (2021) "Carbon Emissions and Large Neural Network Training" [arXiv:2104.10350](https://arxiv.org/abs/2104.10350)
-- Luccioni et al. (2024) "Power Hungry Processing" [arXiv:2311.16863](https://arxiv.org/abs/2311.16863)
-- Google 2025 Environmental Report
 
 ## Quick Start
 
 ```bash
-# 1. Install Python dependencies
+# Setup
 pip install -r requirements.txt
 
-# 2. Run analysis on your code
-python main.py --file your_code.py
+# Run tests (10 real-world scenarios)
+python test_samples/test_model_comparison.py
 
-# 3. Run tests
-python test_samples/test_comprehensive.py
+# Start inference server (for VS Code plugin)
+python inference_server.py
 ```
 
-## IDE Plugin
+## VS Code Plugin
 
-See [ide_plugin/README.md](ide_plugin/README.md) for VS Code extension setup.
+### Install from Source (Now)
+```bash
+cd ide_plugin
+npm install
+npm run compile
+# Then in VS Code: "Developer: Install Extension from Location..."
+```
 
-## Heuristic Adjustments
+### Install from Marketplace (Coming Soon)
+```
+ext install ai-gauge.ai-gauge
+```
 
-The fine-tuned model is augmented with 5 heuristic rules for edge cases:
+### How It Works
+1. Plugin detects LLM API calls in your code
+2. Sends to local inference server (http://localhost:8080)
+3. Fine-tuned Phi-3.5 model analyzes the task
+4. Shows inline hint if model is overkill
 
-1. **Tool Use** → at least standard tier
-2. **Complex Tasks** → frontier tier
-3. **Agentic Tasks** → frontier tier
-4. **Extended Reasoning** → at least premium tier
-5. **Expert Logic Puzzles** → frontier tier
+## Test Results (90% Accuracy)
 
-Backups for testing without heuristics:
-- `decision_module_original_no_heuristics.py.bak`
-- `decision_module_with_heuristics.py.bak`
+| Case | Task | Model | Verdict | Status |
+|------|------|-------|---------|--------|
+| 1 | Fix typo | gpt-5.2 | OVERKILL | ✅ |
+| 2 | Einstein's Riddle | gpt-5.2 | APPROPRIATE | ✅ |
+| 3 | Code review | gpt-4o | APPROPRIATE | ✅ |
+| 4 | Date format | claude-opus | OVERKILL | ✅ |
+| 5 | Research agent | gpt-5.2 | APPROPRIATE | ✅ |
+| 6 | Extract email | gpt-5.2 | OVERKILL | ✅ |
+| 7 | Architecture design | gpt-5.2 | APPROPRIATE | ✅ |
+| 8 | Translation | gpt-5.2 | OVERKILL | ✅ |
+| 9 | Math proof | o3 | ⚠️ | ❌ |
+| 10 | Format JSON | claude-opus | OVERKILL | ✅ |
+
+## Architecture
+
+```
+Your Code → VS Code Plugin → Inference Server → Local Phi-3.5 → Recommendation
+                                    ↓
+                           3-Agent LangGraph Pipeline
+                           1. Metadata Extractor
+                           2. Task Analyzer  
+                           3. Report Generator
+```
+
+## Files
+
+```
+AI-Gauge/
+├── decision_module.py     # Core 3-agent pipeline
+├── local_inference.py     # Phi-3.5 model wrapper
+├── inference_server.py    # Flask API for plugin
+├── model_cards.py         # Model database
+├── ide_plugin/            # VS Code extension
+│   ├── package.json
+│   └── src/
+└── test_samples/          # Test suite
+```
+
+## Model Tiers
+
+| Tier | Models | Cost | CO₂ Factor |
+|------|--------|------|------------|
+| Budget | gpt-4o-mini, claude-haiku | $ | 0.3-1.0x |
+| Standard | gpt-4o, claude-sonnet | $$ | 1.0-2.5x |
+| Premium | gpt-4.1, o4-mini | $$$ | 3.0-5.0x |
+| Frontier | gpt-5.2, o3, claude-opus | $$$$ | 8.0-12.0x |
 
 ## License
 
