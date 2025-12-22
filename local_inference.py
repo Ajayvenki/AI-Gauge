@@ -76,27 +76,40 @@ def analyze_with_local_model(
         # Fall back to default response if model not available
         return get_fallback_analysis(metadata)
     
-    # Build the instruction in the format the model was trained on
-    tool_info = f"Tools: {metadata.get('tool_count', 0)} ({', '.join(metadata.get('tools', [])[:3]) if metadata.get('tools') else 'none'})"
+    # Build the instruction in EXACT format the model was trained on
+    # This MUST match the training data format from train_combined_final.jsonl
     
-    instruction = f"""Analyze this LLM API call for efficiency.
+    # Get model pricing info
+    input_cost = metadata.get('input_cost', 'Unknown')
+    output_cost = metadata.get('output_cost', 'Unknown')
+    provider = metadata.get('provider', 'unknown')
+    
+    # Optional context section
+    context_str = ""
+    if metadata.get('context'):
+        context_str = f"\nContext: {json.dumps(metadata.get('context'))}"
+    
+    instruction = f"""Analyze this LLM API call and determine if the model choice is appropriate:
 
-## System Prompt
-{system_prompt[:1500] if system_prompt else '(none)'}
+Model: {model_id}
+Provider: {provider}
+Input Cost: {input_cost}
+Output Cost: {output_cost}
 
-## User Prompt
-{user_prompt[:1500]}
+System Prompt: {system_prompt[:1500] if system_prompt else '(none)'}
+User Prompt: {user_prompt[:1500]}{context_str}
 
-## Model Used
-{model_id}
-
-## Metadata
-{tool_info}
-Reasoning Effort: {metadata.get('reasoning_effort', 'none')}
-Context Complexity: {metadata.get('context_complexity', 'none')}
-Temperature: {metadata.get('temperature', 0.5)}
-
-Return JSON with: task_summary, task_category, actual_complexity, minimum_capable_tier, is_model_appropriate, appropriateness_reasoning"""
+Return a JSON object with your analysis including:
+- task_analysis: Brief description of what the task requires
+- actual_complexity: One of [trivial, simple, moderate, complex, expert]
+- complexity_reasoning: Why this complexity level
+- minimum_capable_tier: One of [budget, standard, premium, frontier]
+- is_model_appropriate: true/false
+- appropriateness_reasoning: Explain why appropriate or overkill
+- estimated_output_tokens: Estimated tokens needed
+- requires_extended_reasoning: true/false
+- is_agentic_task: true/false
+- has_tool_use: true/false"""
 
     # Format for Phi-3.5 chat template
     prompt = f"<|user|>\n{instruction}<|end|>\n<|assistant|>\n"
@@ -236,6 +249,13 @@ def normalize_analysis_result(result: Dict[str, Any]) -> Dict[str, Any]:
             elif not isinstance(val, bool):
                 result[field] = bool(val)
     
+    # Ensure estimated_output_tokens is always an integer
+    if "estimated_output_tokens" in result:
+        try:
+            result["estimated_output_tokens"] = int(result["estimated_output_tokens"])
+        except (ValueError, TypeError):
+            result["estimated_output_tokens"] = 200
+    
     # Ensure required fields have defaults
     defaults = {
         "task_summary": "Task analysis",
@@ -321,28 +341,59 @@ def test_local_model():
         print("❌ Local model not available")
         return False
     
-    test_result = analyze_with_local_model(
-        system_prompt="You are a helpful assistant.",
-        user_prompt="Fix the typo in: 'The quik brown fox'",
+    # Test 1: Trivial task with frontier model (should detect OVERKILL)
+    print("\n" + "=" * 50)
+    print("TEST 1: Trivial task with frontier model")
+    print("Expected: is_model_appropriate=False, minimum_capable_tier=budget")
+    print("=" * 50)
+    
+    test_result_1 = analyze_with_local_model(
+        system_prompt="You fix typos.",
+        user_prompt="Fix the typo in: 'teh quick brown fox'",
         model_id="gpt-5.2",
         metadata={
-            "tool_count": 0,
-            "tools": [],
-            "reasoning_effort": "none",
-            "context_complexity": "none",
-            "temperature": 0.3
+            "provider": "openai",
+            "input_cost": "$1.75/1M tokens",
+            "output_cost": "$14.0/1M tokens"
         }
     )
     
-    print(f"\n📊 Test result:")
-    print(json.dumps(test_result, indent=2))
+    print(f"\n📊 Test 1 Result:")
+    print(f"  actual_complexity: {test_result_1.get('actual_complexity')}")
+    print(f"  minimum_capable_tier: {test_result_1.get('minimum_capable_tier')}")
+    print(f"  is_model_appropriate: {test_result_1.get('is_model_appropriate')}")
+    test1_pass = (test_result_1.get('is_model_appropriate') == False and 
+                  test_result_1.get('minimum_capable_tier') == 'budget')
+    print(f"  {'✅ PASS' if test1_pass else '❌ FAIL'}")
     
-    if test_result.get("actual_complexity") in ["trivial", "simple"]:
-        print("\n✅ Model correctly identified trivial task!")
-        return True
-    else:
-        print(f"\n⚠️  Model returned: {test_result.get('actual_complexity')}")
-        return False
+    # Test 2: Expert task with frontier model (should be APPROPRIATE)
+    print("\n" + "=" * 50)
+    print("TEST 2: Expert logic puzzle with frontier model")
+    print("Expected: is_model_appropriate=True, minimum_capable_tier=frontier")
+    print("=" * 50)
+    
+    test_result_2 = analyze_with_local_model(
+        system_prompt="Expert problem solver. Think step by step.",
+        user_prompt="Solve Einstein's riddle: Five houses in different colors, different nationalities...",
+        model_id="gpt-5.2",
+        metadata={
+            "provider": "openai",
+            "input_cost": "$1.75/1M tokens",
+            "output_cost": "$14.0/1M tokens",
+            "context": {"type": "logic_puzzle", "difficulty": "expert"}
+        }
+    )
+    
+    print(f"\n📊 Test 2 Result:")
+    print(f"  actual_complexity: {test_result_2.get('actual_complexity')}")
+    print(f"  minimum_capable_tier: {test_result_2.get('minimum_capable_tier')}")
+    print(f"  is_model_appropriate: {test_result_2.get('is_model_appropriate')}")
+    test2_pass = (test_result_2.get('is_model_appropriate') == True and 
+                  test_result_2.get('minimum_capable_tier') == 'frontier')
+    print(f"  {'✅ PASS' if test2_pass else '❌ FAIL'}")
+    
+    print(f"\n{'🎉 ALL TESTS PASSED!' if test1_pass and test2_pass else '⚠️ SOME TESTS FAILED'}")
+    return test1_pass and test2_pass
 
 
 if __name__ == "__main__":
