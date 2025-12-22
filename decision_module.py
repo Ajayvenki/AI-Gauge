@@ -810,42 +810,33 @@ def analyzer_agent(state: AgentState) -> AgentState:
     is_appropriate = analysis.get('is_model_appropriate', True)
     appropriateness_reasoning = analysis.get('appropriateness_reasoning', '')
     minimum_tier = analysis.get('minimum_capable_tier', 'standard')
-    estimated_output = analysis.get('estimated_output_tokens', 200)
+    # Ensure estimated_output is always an integer (model might return string or weird values)
+    raw_estimated_output = analysis.get('estimated_output_tokens', 200)
+    try:
+        estimated_output = int(raw_estimated_output) if raw_estimated_output else 200
+    except (ValueError, TypeError):
+        # Handle cases like "~200 tokens" or None
+        estimated_output = 200
     actual_complexity = analysis.get('actual_complexity', 'moderate').lower()
     
     # ==========================================================================
-    # HEURISTIC ADJUSTMENTS
-    # The fine-tuned model provides good base analysis but sometimes needs
-    # refinement for edge cases. These adjustments are based on test results.
+    # STRUCTURAL ADJUSTMENTS (NOT keyword heuristics)
+    # These fix inconsistencies between model's complexity assessment and tier output.
+    # The model is intelligent - we're just ensuring logical consistency.
     # ==========================================================================
     
-    # 1. Tool use requires at least standard tier (not budget)
-    #    Tools add complexity regardless of the underlying task
-    if metadata.get('tool_count', 0) > 0 and minimum_tier == 'budget':
-        minimum_tier = 'standard'
-    
-    # 2. Complex tasks should require frontier tier
-    #    The model sometimes underestimates complexity for reasoning-heavy tasks
-    if actual_complexity == 'complex' and minimum_tier in ('budget', 'standard'):
-        minimum_tier = 'frontier'
-    
-    # 3. Agentic tasks require frontier tier
-    if analysis.get('is_agentic_task', False) and minimum_tier != 'frontier':
-        minimum_tier = 'frontier'
-    
-    # 4. Extended reasoning explicitly requested requires at least premium tier
-    if analysis.get('requires_extended_reasoning', False) and minimum_tier in ('budget', 'standard'):
-        minimum_tier = 'premium'
-    
-    # 5. Logic puzzles with expert difficulty require frontier tier
-    #    The model sometimes underestimates complexity for multi-constraint logic problems
-    context_difficulty = str(metadata.get('context', {}).get('difficulty', '')).lower()
-    context_type = str(metadata.get('context', {}).get('type', '')).lower()
-    if context_difficulty == 'expert' and 'puzzle' in context_type:
-        minimum_tier = 'frontier'
+    # TIER-COMPLEXITY CONSISTENCY:
+    # If model says task is COMPLEX but recommends a lower tier, trust the complexity.
+    # Complex tasks require at least premium tier (or frontier for consistency).
+    # This fixes cases where model correctly identifies complexity but underestimates tier.
+    if actual_complexity in ('complex', 'expert'):
+        if minimum_tier in ('budget', 'standard', 'premium'):
+            # Complex/Expert tasks should allow frontier tier
+            # (premium can handle but frontier is also appropriate, not overkill)
+            minimum_tier = 'frontier'
     
     # ==========================================================================
-    # END HEURISTIC ADJUSTMENTS
+    # END STRUCTURAL ADJUSTMENTS
     # ==========================================================================
     
     # TIER-BASED OVERKILL DETECTION
