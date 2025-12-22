@@ -20,7 +20,9 @@ from datetime import datetime
 from typing import Any, Dict
 
 from dotenv import load_dotenv
-from openai import OpenAI
+
+# NOTE: OpenAI API no longer required - using local model
+# from openai import OpenAI
 
 # ---------------------------------------------------------------------------
 # Configuration — Appears sophisticated, actually simple task
@@ -95,7 +97,8 @@ MODEL_CONFIG = {
 def invoke_llm() -> Dict[str, Any]:
     """Invoke the LLM with the configured prompt. Returns metadata + response."""
     load_dotenv()
-    api_key = os.getenv("OPENAI_API_KEY")
+    # NOTE: API key no longer needed - using local model for analysis
+    # api_key = os.getenv("OPENAI_API_KEY")
 
     # Build the full prompt
     full_user_content = (
@@ -116,27 +119,15 @@ def invoke_llm() -> Dict[str, Any]:
         "full_prompt_preview": full_user_content[:500] + "..." if len(full_user_content) > 500 else full_user_content,
     }
 
-    # Invoke the model
+    # Mock response (no API call needed - using local model for analysis)
     start_time = time.time()
-
-    if not api_key:
-        # Mock response for demo
-        llm_output = "Monitor your AI costs and carbon footprint directly in VS Code."
-        metadata["_mock"] = True
-    else:
-        try:
-            client = OpenAI(api_key=api_key)
-            response = client.responses.create(
-                model=MODEL_ID,
-                input=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": full_user_content},
-                ],
-            )
-            llm_output = response.output_text or "(empty response)"
-        except Exception as e:
-            llm_output = f"(error) {e}"
-            metadata["_error"] = str(e)
+    llm_output = "Monitor your AI costs and carbon footprint directly in VS Code."
+    metadata["_mock"] = True
+    
+    # NOTE: OpenAI API calls removed - we use local Phi-3.5 for analysis
+    # if api_key:
+    #     client = OpenAI(api_key=api_key)
+    #     response = client.responses.create(...)
 
     elapsed_ms = (time.time() - start_time) * 1000
 

@@ -45,7 +45,9 @@ import os
 import json
 from typing import TypedDict, List, Dict, Any, Optional
 from dotenv import load_dotenv
-from openai import OpenAI
+
+# NOTE: OpenAI API is no longer required - using local model only
+# from openai import OpenAI
 
 # Import local inference module for fine-tuned model
 try:
@@ -74,8 +76,9 @@ from model_cards import (
 
 load_dotenv()
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# NOTE: OpenAI client no longer needed - using local Phi-3.5 model
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = None  # Placeholder for compatibility
 
 # ============================================================================
 # STATE DEFINITION
@@ -976,15 +979,193 @@ def analyzer_agent(state: AgentState) -> AgentState:
 # AGENT 3: REVIEWER & REPORT GENERATOR (Review findings, generate comprehensive report)
 # ============================================================================
 
+def get_all_models_in_tier(tier: str) -> list:
+    """Get all stable models in a specific tier from MODEL_CARDS."""
+    from model_cards import MODEL_CARDS
+    return [card for card in MODEL_CARDS if card.tier == tier and card.status == "stable"]
+
+
+def format_recommendation_report(
+    verdict: str,
+    is_appropriate: bool,
+    metadata: dict,
+    current_model: dict,
+    carbon_analysis: dict,
+    alternatives: list,
+    appropriateness_reasoning: str,
+    task_analysis: dict
+) -> str:
+    """
+    Generate a comprehensive, beautifully formatted recommendation report.
+    
+    Shows:
+    - Collected metadata (tokens, model info, cost, CO₂)
+    - Verdict with appropriate emoji
+    - All models in recommended tier (not just top 3)
+    - Detailed reasoning
+    - Carbon impact with formula
+    """
+    minimum_tier = task_analysis.get('minimum_tier', 'budget')
+    input_tokens = carbon_analysis.get('input_tokens', 0)
+    output_tokens = carbon_analysis.get('estimated_output_tokens', 0)
+    total_tokens = input_tokens + output_tokens
+    
+    # Current model info
+    current_cost = carbon_analysis.get('current_model_cost', 0)
+    current_carbon = carbon_analysis.get('current_model_carbon', {})
+    current_co2 = current_carbon.get('co2_grams', 0)
+    carbon_factor = current_model.get('carbon_factor', 1.0)
+    
+    # Build the report sections
+    lines = []
+    
+    # ==================== HEADER ====================
+    lines.append("")
+    lines.append("╔" + "═" * 78 + "╗")
+    lines.append("║" + "🌱 AI-GAUGE RECOMMENDATION REPORT".center(78) + "║")
+    lines.append("╠" + "═" * 78 + "╣")
+    
+    if verdict == "OVERKILL":
+        lines.append("║" + "  ✅ VERDICT: OVERKILL — Cost savings available!".ljust(78) + "║")
+    elif verdict == "APPROPRIATE":
+        lines.append("║" + "  👍 VERDICT: APPROPRIATE — Good model choice".ljust(78) + "║")
+    else:
+        lines.append("║" + f"  ⚠️  VERDICT: {verdict}".ljust(78) + "║")
+    
+    lines.append("╚" + "═" * 78 + "╝")
+    
+    # ==================== METADATA SECTION ====================
+    lines.append("")
+    lines.append("┌" + "─" * 78 + "┐")
+    lines.append("│" + " 📋 METADATA (Collected from intercepted LLM call)".ljust(78) + "│")
+    lines.append("├" + "─" * 78 + "┤")
+    lines.append("│" + f"   Model Requested:  {current_model.get('display_name', 'Unknown')} ({current_model.get('model_id', 'N/A')})".ljust(78) + "│")
+    lines.append("│" + f"   Provider:         {current_model.get('provider', 'Unknown').upper()}".ljust(78) + "│")
+    lines.append("│" + f"   Current Tier:     {current_model.get('tier', 'unknown').upper()}".ljust(78) + "│")
+    lines.append("│" + "".ljust(78) + "│")
+    lines.append("│" + f"   Estimated Tokens: {input_tokens} input / {output_tokens} output (≈{total_tokens} total)".ljust(78) + "│")
+    lines.append("│" + f"   Cost per 1M:      ${current_model.get('input_cost_per_1m', 0):.2f} input / ${current_model.get('output_cost_per_1m', 0):.2f} output".ljust(78) + "│")
+    lines.append("│" + f"   Est. Request Cost: ${current_cost:.6f}".ljust(78) + "│")
+    lines.append("│" + "".ljust(78) + "│")
+    lines.append("│" + f"   Carbon Factor:    {carbon_factor}x baseline (GPT-3.5 = 1.0)".ljust(78) + "│")
+    lines.append("│" + f"   Est. CO₂:         {current_co2:.4f}g  (tokens × factor × 0.0001 = {total_tokens} × {carbon_factor} × 0.0001)".ljust(78) + "│")
+    lines.append("└" + "─" * 78 + "┘")
+    
+    # ==================== TASK ANALYSIS SECTION ====================
+    lines.append("")
+    lines.append("┌" + "─" * 78 + "┐")
+    lines.append("│" + " 🧠 TASK ANALYSIS".ljust(78) + "│")
+    lines.append("├" + "─" * 78 + "┤")
+    task_summary = task_analysis.get('summary', 'Unknown task')[:60]
+    lines.append("│" + f"   Task Summary:     {task_summary}".ljust(78) + "│")
+    lines.append("│" + f"   Category:         {task_analysis.get('category', 'unknown')}".ljust(78) + "│")
+    lines.append("│" + f"   Complexity:       {task_analysis.get('complexity', 'unknown').upper()}".ljust(78) + "│")
+    lines.append("│" + f"   Minimum Tier:     {minimum_tier.upper()}".ljust(78) + "│")
+    lines.append("└" + "─" * 78 + "┘")
+    
+    # ==================== VERDICT SECTION ====================
+    lines.append("")
+    lines.append("┌" + "─" * 78 + "┐")
+    lines.append("│" + " 🎯 ANALYSIS RESULT".ljust(78) + "│")
+    lines.append("├" + "─" * 78 + "┤")
+    
+    if verdict == "OVERKILL":
+        lines.append("│" + "   ✅ This task can be handled by CHEAPER models!".ljust(78) + "│")
+        lines.append("│" + "".ljust(78) + "│")
+        
+        # ==================== ALL MODELS IN TIER ====================
+        tier_models = get_all_models_in_tier(minimum_tier)
+        if tier_models:
+            lines.append("│" + f"   📦 ALL {minimum_tier.upper()} TIER MODELS (Any of these will work):".ljust(78) + "│")
+            lines.append("│" + "".ljust(78) + "│")
+            
+            for model in tier_models:
+                # Calculate savings
+                model_cost = model.input_cost_per_1m + model.output_cost_per_1m
+                current_total_cost = current_model.get('input_cost_per_1m', 0) + current_model.get('output_cost_per_1m', 0)
+                cost_savings = ((current_total_cost - model_cost) / current_total_cost * 100) if current_total_cost > 0 else 0
+                
+                # Calculate CO₂ savings
+                model_co2 = total_tokens * model.carbon_factor * 0.0001
+                co2_savings = ((current_co2 - model_co2) / current_co2 * 100) if current_co2 > 0 else 0
+                
+                lines.append("│" + f"   ├─ {model.display_name} ({model.provider})".ljust(78) + "│")
+                lines.append("│" + f"   │     Cost: ${model.input_cost_per_1m:.2f}/${model.output_cost_per_1m:.2f} per 1M tokens".ljust(78) + "│")
+                lines.append("│" + f"   │     Savings: {cost_savings:.0f}% cost, {co2_savings:.0f}% CO₂".ljust(78) + "│")
+                lines.append("│" + f"   │     CO₂: {model_co2:.4f}g (vs {current_co2:.4f}g current)".ljust(78) + "│")
+                lines.append("│" + "   │".ljust(78) + "│")
+        
+        # ==================== REASONING SECTION ====================
+        lines.append("│" + "".ljust(78) + "│")
+        lines.append("├" + "─" * 78 + "┤")
+        lines.append("│" + " 📝 REASONING".ljust(78) + "│")
+        lines.append("├" + "─" * 78 + "┤")
+        
+        complexity = task_analysis.get('complexity', 'unknown')
+        current_tier = current_model.get('tier', 'unknown')
+        
+        lines.append("│" + f"   • Task Complexity: {complexity.upper()}".ljust(78) + "│")
+        lines.append("│" + f"   • Current model ({current_model.get('model_id', 'N/A')}) is in the {current_tier.upper()} tier".ljust(78) + "│")
+        lines.append("│" + f"   • Minimum required tier for this task: {minimum_tier.upper()}".ljust(78) + "│")
+        lines.append("│" + f"   • Using {current_tier.upper()} tier for a {minimum_tier.upper()}-level task wastes resources".ljust(78) + "│")
+        lines.append("│" + "".ljust(78) + "│")
+        
+        # Complexity reasoning from model
+        complexity_reasoning = task_analysis.get('complexity_reasoning', '')
+        if complexity_reasoning:
+            # Word wrap the reasoning
+            words = complexity_reasoning.split()
+            line = "   • Model reasoning: "
+            for word in words[:20]:  # Limit to first 20 words
+                if len(line) + len(word) + 1 < 75:
+                    line += word + " "
+                else:
+                    lines.append("│" + line.ljust(78) + "│")
+                    line = "     " + word + " "
+            if line.strip():
+                lines.append("│" + line.ljust(78) + "│")
+        
+        # ==================== CARBON IMPACT SECTION ====================
+        lines.append("│" + "".ljust(78) + "│")
+        lines.append("├" + "─" * 78 + "┤")
+        lines.append("│" + " 🌍 CARBON IMPACT".ljust(78) + "│")
+        lines.append("├" + "─" * 78 + "┤")
+        lines.append("│" + f"   • Current model CO₂: {current_co2:.4f}g per call".ljust(78) + "│")
+        
+        if tier_models:
+            avg_tier_co2 = sum(total_tokens * m.carbon_factor * 0.0001 for m in tier_models) / len(tier_models)
+            co2_reduction = ((current_co2 - avg_tier_co2) / current_co2 * 100) if current_co2 > 0 else 0
+            lines.append("│" + f"   • Average {minimum_tier} tier CO₂: {avg_tier_co2:.4f}g per call".ljust(78) + "│")
+            lines.append("│" + f"   • Potential CO₂ reduction: {co2_reduction:.0f}%".ljust(78) + "│")
+        
+        lines.append("│" + "".ljust(78) + "│")
+        lines.append("│" + "   💡 RECOMMENDATION: Switch to any model in the suggested tier to save".ljust(78) + "│")
+        lines.append("│" + "      money and reduce environmental impact without sacrificing quality.".ljust(78) + "│")
+        
+    else:
+        # APPROPRIATE case
+        lines.append("│" + "   👍 Your model choice is well-suited for this task.".ljust(78) + "│")
+        lines.append("│" + "".ljust(78) + "│")
+        lines.append("│" + f"   • Task requires {minimum_tier.upper()} tier capabilities".ljust(78) + "│")
+        lines.append("│" + f"   • Current model is at the appropriate tier".ljust(78) + "│")
+        lines.append("│" + f"   • Est. CO₂ per call: {current_co2:.4f}g".ljust(78) + "│")
+        lines.append("│" + "".ljust(78) + "│")
+        lines.append("│" + "   No changes recommended.".ljust(78) + "│")
+    
+    lines.append("└" + "─" * 78 + "┘")
+    lines.append("")
+    
+    return "\n".join(lines)
+
 def reporter_agent(state: AgentState) -> AgentState:
     """
     Agent 3: Reviewer & Report Generator
     
     Responsibilities:
     - Review the analysis from Agent 2
-    - Generate a comprehensive human-readable report
-    - If recommending a switch, provide MULTIPLE alternatives with GENERIC reasoning
-    - Each alternative should be justified with reasoning applicable to similar models
+    - Generate a comprehensive human-readable report using format_recommendation_report()
+    - Show ALL models in the recommended tier
+    - Include detailed reasoning and CO₂ calculations
     - Provide clear verdict: APPROPRIATE, OVERKILL, or UNDERPOWERED
     """
     print("\n📋 [Agent 3: Reviewer & Report Generator] Reviewing analysis and generating report...")
@@ -1009,199 +1190,62 @@ def reporter_agent(state: AgentState) -> AgentState:
     else:
         review_verdict = "UNDERPOWERED"
     
-    # Format carbon display
-    current_carbon = carbon_analysis.get('current_model_carbon', {})
-    current_carbon_display = f"{current_carbon.get('co2_grams', 0):.4f}g CO₂" if current_carbon.get('co2_grams') else "unknown"
-    
+    # Build recommendation object
     if is_appropriate:
-        # Model is appropriate - no recommendation needed
         recommendation = {
             'switch_recommended': False,
             'verdict': review_verdict,
             'reason': 'Model choice is appropriate for this task',
             'current_model': current_model.get('display_name', 'Unknown'),
+            'minimum_tier': minimum_tier,
+            'complexity': task_analysis.get('complexity', 'unknown'),
+            'reasoning': appropriateness_reasoning,
             'recommended_alternatives': [],
-            'generic_reasoning': 'The selected model tier matches the task complexity.',
             'confidence': 'high'
         }
-        
-        summary = f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                         🌱 AI-GAUGE ANALYSIS REPORT                          ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║  VERDICT: ✅ MODEL CHOICE IS APPROPRIATE                                     ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 📊 TASK ANALYSIS                                                              │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Task:          {task_analysis.get('summary', 'Unknown task')[:55]:<55} │
-│ Complexity:    {task_analysis.get('complexity', 'unknown').upper():<55} │
-│ Category:      {task_analysis.get('category', 'unknown'):<55} │
-│ Min Tier:      {task_analysis.get('minimum_tier', 'unknown'):<55} │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 📍 CURRENT MODEL                                                              │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Model:         {current_model.get('display_name', 'Unknown'):<55} │
-│ Provider:      {current_model.get('provider', 'Unknown'):<55} │
-│ Cost:          ${carbon_analysis.get('current_model_cost', 0):.6f} per request{' ':<36} │
-│ Carbon:        {current_carbon_display:<55} │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 💡 ASSESSMENT                                                                 │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ {appropriateness_reasoning[:72]:<72} │
-│                                                                              │
-│ Your model choice is well-suited for this task. No changes recommended.     │
-└──────────────────────────────────────────────────────────────────────────────┘
-"""
-        print(f"   ├─ Verdict: {review_verdict}")
-        print(f"   └─ Recommendation: KEEP current model")
-        
-    elif alternatives:
-        # Model is NOT appropriate and we have alternatives
-        # Build list of recommended alternatives with GENERIC reasoning
+    else:
+        # Build alternatives list
         recommended_alternatives = []
-        alternatives_summary = ""
-        
-        # Generic reasoning that applies to all models in the recommended tier
-        minimum_tier = task_analysis.get('minimum_tier', 'budget')
-        generic_reasoning = generate_generic_tier_reasoning(
-            minimum_tier=minimum_tier,
-            task_summary=task_analysis.get('summary', 'this task'),
-            task_category=task_analysis.get('category', 'general'),
-            complexity=task_analysis.get('complexity', 'moderate')
-        )
-        
-        # Process up to 4 alternatives
-        for i, alt in enumerate(alternatives[:4]):
-            raw_alt_card = get_model_card(alt['model_id'])
-            alt_card = model_card_to_dict(raw_alt_card) or {}
-            
-            carbon_savings_display = f"{alt.get('carbon_savings_percent', 0):.1f}%" if alt.get('carbon_savings_percent') else "N/A"
-            alt_carbon_display = f"{alt['carbon']['co2_grams']:.4f}g" if alt.get('carbon', {}).get('co2_grams') else "N/A"
-            
+        for alt in alternatives[:5]:
             recommended_alternatives.append({
-                'model_id': alt['model_id'],
-                'name': alt['name'],
-                'provider': alt['provider'],
-                'cost': alt['total_cost'],
-                'cost_savings_percent': alt['cost_savings_percent'],
-                'carbon_savings_percent': alt.get('carbon_savings_percent'),
-                'best_for': alt_card.get('best_for', [])[:3]
+                'model_id': alt.get('model_id', ''),
+                'name': alt.get('name', 'Unknown'),
+                'provider': alt.get('provider', 'unknown'),
+                'cost': alt.get('total_cost', 0),
+                'cost_savings_percent': alt.get('cost_savings_percent', 0),
+                'carbon_savings_percent': alt.get('carbon_savings_percent', 0),
             })
-            
-            alternatives_summary += f"""
-│ Option {i+1}: {alt['name']:<20} ({alt['provider']})                        │
-│   Cost:    ${alt['total_cost']:.6f}  |  Savings: {alt['cost_savings_percent']:.1f}%  |  Carbon: {carbon_savings_display:<8} │"""
-
+        
         recommendation = {
             'switch_recommended': True,
             'verdict': review_verdict,
             'current_model': current_model.get('display_name', 'Unknown'),
+            'minimum_tier': minimum_tier,
+            'complexity': task_analysis.get('complexity', 'unknown'),
+            'reasoning': appropriateness_reasoning,
             'recommended_alternatives': recommended_alternatives,
-            'primary_recommendation': recommended_alternatives[0] if recommended_alternatives else None,
-            'generic_reasoning': generic_reasoning,
-            'confidence': 'high' if alternatives[0]['cost_savings_percent'] > 50 else 'medium',
-            'alternatives_count': len(alternatives)
+            'confidence': 'high' if alternatives and alternatives[0].get('cost_savings_percent', 0) > 50 else 'medium'
         }
-        
-        summary = f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                      🌱 AI-GAUGE RECOMMENDATION REPORT                       ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║  VERDICT: ⚠️  MODEL CHOICE IS {review_verdict:<47} ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 📊 TASK ANALYSIS                                                              │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Task:          {task_analysis.get('summary', 'Unknown task')[:55]:<55} │
-│ Complexity:    {task_analysis.get('complexity', 'unknown').upper():<55} │
-│ Category:      {task_analysis.get('category', 'unknown'):<55} │
-│ Min Tier:      {task_analysis.get('minimum_tier', 'unknown'):<55} │
-│                                                                              │
-│ Reasoning:     {task_analysis.get('complexity_reasoning', '')[:55]:<55} │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 📍 CURRENT MODEL (not recommended)                                           │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Model:         {current_model.get('display_name', 'Unknown'):<55} │
-│ Provider:      {current_model.get('provider', 'Unknown'):<55} │
-│ Cost:          ${carbon_analysis.get('current_model_cost', 0):.6f} per request{' ':<36} │
-│ Carbon:        {current_carbon_display:<55} │
-│                                                                              │
-│ Assessment:    {appropriateness_reasoning[:55]:<55} │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 🔄 RECOMMENDED ALTERNATIVES                                                   │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Any of the following models can handle this task effectively:                │
-│{alternatives_summary}
-│                                                                              │
-│ ─────────────────────────────────────────────────────────────────────────── │
-│                                                                              │
-│ 💡 WHY THESE MODELS ARE SUFFICIENT (Generic Reasoning):                      │
-│                                                                              │
-│ {generic_reasoning[:70]:<70} │
-│ {generic_reasoning[70:140] if len(generic_reasoning) > 70 else '':<70} │
-│ {generic_reasoning[140:210] if len(generic_reasoning) > 140 else '':<70} │
-│                                                                              │
-│ All models in the {minimum_tier} tier share these capabilities and can      │
-│ successfully complete this type of task with similar quality.                │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 📈 POTENTIAL IMPACT                                                           │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Cost Savings:    Up to {alternatives[0]['cost_savings_percent']:.1f}% per request{' ':<39} │
-│ Carbon Savings:  Up to {alternatives[0].get('carbon_savings_percent') or 0:.1f}% reduction{' ':<38} │
-│ Latency Savings: Up to {alternatives[0].get('latency_savings_percent') or 0:.1f}% faster (~{alternatives[0].get('latency_savings_sec') or 0:.2f}s){' ':<18} │
-└──────────────────────────────────────────────────────────────────────────────┘
-"""
-        print(f"   ├─ Verdict: {review_verdict}")
-        print(f"   ├─ Found {len(alternatives)} suitable alternatives")
-        for i, alt in enumerate(alternatives[:3]):
-            print(f"   │   {i+1}. {alt['name']} ({alt['provider']}) - saves {alt['cost_savings_percent']:.1f}%")
-        print(f"   └─ Generic reasoning: {generic_reasoning[:60]}...")
-        
+    
+    # Generate the formatted report using the new function
+    summary = format_recommendation_report(
+        verdict=review_verdict,
+        is_appropriate=is_appropriate,
+        metadata=metadata,
+        current_model=current_model,
+        carbon_analysis=carbon_analysis,
+        alternatives=alternatives,
+        appropriateness_reasoning=appropriateness_reasoning,
+        task_analysis=task_analysis
+    )
+    
+    print(f"   ├─ Verdict: {review_verdict}")
+    if not is_appropriate:
+        print(f"   ├─ Found {len(alternatives)} alternatives in result")
+        tier_models = get_all_models_in_tier(minimum_tier)
+        print(f"   └─ Total {minimum_tier} tier models available: {len(tier_models)}")
     else:
-        # Model is NOT appropriate but no alternatives found
-        recommendation = {
-            'switch_recommended': False,
-            'verdict': review_verdict,
-            'reason': 'Model may be overkill but no suitable alternatives found in our registry',
-            'current_model': current_model.get('display_name', 'Unknown'),
-            'recommended_alternatives': [],
-            'generic_reasoning': 'Consider using smaller models from the same provider or exploring other providers.',
-            'confidence': 'low'
-        }
-        
-        summary = f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                      🌱 AI-GAUGE ANALYSIS REPORT                             ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║  VERDICT: ⚠️  ANALYSIS INCONCLUSIVE                                          ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Assessment:                                                                  │
-│ {appropriateness_reasoning[:70]:<70} │
-│                                                                              │
-│ However, we couldn't find suitable alternatives in our model registry.       │
-│ Consider reviewing your model choice manually or exploring:                  │
-│   • Claude Haiku 3.5 (Anthropic) - fast, cost-effective                     │
-│   • GPT-4o-mini (OpenAI) - balanced performance                             │
-│   • Gemini 2.0 Flash Lite (Google) - budget-friendly                        │
-└──────────────────────────────────────────────────────────────────────────────┘
-"""
-        print(f"   ├─ Verdict: {review_verdict}")
-        print(f"   └─ Note: No alternatives found in registry")
+        print(f"   └─ Recommendation: KEEP current model")
     
     return {
         **state,
@@ -1211,7 +1255,7 @@ def reporter_agent(state: AgentState) -> AgentState:
         'messages': state.get('messages', []) + [{
             'role': 'agent',
             'agent': 'reviewer',
-            'content': f"Review complete: verdict={review_verdict}, alternatives={len(recommendation.get('recommended_alternatives', []))}"
+            'content': f"Review complete: verdict={review_verdict}"
         }]
     }
 
@@ -1329,7 +1373,8 @@ def analyze_llm_call(
     tools: Optional[List[str]] = None,
     reasoning_effort: Optional[str] = None,
     model_config: Optional[Dict[str, Any]] = None,
-    conversation_history: Optional[List[Dict[str, str]]] = None
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+    verbose: bool = True  # Set to False to suppress agent execution output
 ) -> Dict[str, Any]:
     """
     Main entry point for the decision module.
@@ -1379,6 +1424,9 @@ def analyze_llm_call(
         - summary: Human-readable report
         - metadata: Extracted comprehensive metadata
     """
+    import sys
+    import io
+    
     graph = create_decision_graph()
     
     initial_state: AgentState = {
@@ -1402,11 +1450,20 @@ def analyze_llm_call(
         'messages': []
     }
     
-    print("\n" + "="*70)
-    print("🌱 AI-GAUGE: Analyzing intercepted LLM call...")
-    print("="*70)
-    
-    final_state = graph.invoke(initial_state)
+    # Suppress output if not verbose
+    if verbose:
+        print("\n" + "="*70)
+        print("🌱 AI-GAUGE: Analyzing intercepted LLM call...")
+        print("="*70)
+        final_state = graph.invoke(initial_state)
+    else:
+        # Capture and discard stdout during graph execution
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            final_state = graph.invoke(initial_state)
+        finally:
+            sys.stdout = old_stdout
     
     return {
         'is_appropriate': final_state.get('is_model_appropriate', True),

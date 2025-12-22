@@ -1,4 +1,15 @@
 # AI-Gauge dependencies
-openai>=1.0.0
+
+# Core
 python-dotenv>=1.0.0
 langgraph>=0.2.0
+
+# Local inference
+llama-cpp-python>=0.2.0
+
+# Inference server (for IDE plugin)
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Optional: OpenAI (commented out - not required for local inference)
+# openai>=1.0.0
