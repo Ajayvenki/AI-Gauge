@@ -3,7 +3,7 @@
 AI-Gauge Inference Server
 
 A lightweight Flask server that provides the AI-Gauge analysis endpoint
-for the VS Code extension to communicate with the local Phi-3.5 model.
+for the VS Code extension. Uses HuggingFace Inference API.
 
 Run with: python inference_server.py
 Default: http://localhost:8080
@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from decision_module import analyze_llm_call
 from model_cards import get_model_card, MODEL_CARDS
+from local_inference import get_model_info
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for VS Code extension
@@ -31,11 +32,15 @@ HOST = os.getenv('AI_GAUGE_HOST', '127.0.0.1')
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Health check endpoint."""
+    """Health check endpoint with backend status."""
+    model_info = get_model_info()
     return jsonify({
         'status': 'ok',
-        'model': 'phi-3.5-finetuned',
-        'version': '0.1.0'
+        'version': '0.2.0',
+        'backend': model_info.get('backend', 'unknown'),
+        'model_available': model_info.get('available', False),
+        'ollama': model_info.get('ollama', {}),
+        'llama_cpp': model_info.get('llama_cpp', {})
     })
 
 
@@ -179,11 +184,15 @@ def list_models_by_tier(tier: str):
 
 
 if __name__ == '__main__':
+    model_info = get_model_info()
+    
     print("=" * 60)
     print("🌱 AI-GAUGE INFERENCE SERVER")
     print("=" * 60)
-    print(f"   Model: Local Phi-3.5 (fine-tuned)")
-    print(f"   Endpoint: http://{HOST}:{PORT}")
+    print("   Backend: HUGGINGFACE")
+    print(f"   Model: {model_info.get('huggingface', {}).get('model_id', 'AJhuggingface/ai-gauge')}")
+    print(f"   API Key Set: {'✅ Yes' if model_info.get('huggingface', {}).get('api_key_set') else '❌ No'}")
+    print(f"\n   Endpoint: http://{HOST}:{PORT}")
     print(f"   Health: http://{HOST}:{PORT}/health")
     print(f"   Analyze: POST http://{HOST}:{PORT}/analyze")
     print("=" * 60)

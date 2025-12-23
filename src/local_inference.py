@@ -1,15 +1,33 @@
 """
 AI-Gauge Local Inference Module
 
-Uses the fine-tuned Phi-3.5 model (Q4_K_M GGUF) for local inference.
-This module replaces the GPT-5.2 calls in the analyzer agent.
+Uses the fine-tuned Phi-3.5 model for local inference.
+Supports multiple backends:
+  - Ollama (recommended): Easy setup, manages model lifecycle
+  - llama-cpp-python: Direct GGUF loading, for advanced users
 """
 
 import json
+import os
+import requests
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Try to import llama_cpp, fall back gracefully
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+# Backend selection: 'ollama' (recommended), 'llama_cpp' (local), 'huggingface' (cloud)
+INFERENCE_BACKEND = os.getenv('AI_GAUGE_BACKEND', 'ollama')
+
+# Ollama configuration (recommended - easiest for users)
+OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434')
+OLLAMA_MODEL = os.getenv('AI_GAUGE_MODEL', 'ai-gauge')
+
+# Path to the fine-tuned GGUF model (for llama_cpp backend)
+MODEL_PATH = Path(__file__).parent / "training_data" / "models" / "ai-gauge-q4_k_m.gguf"
+
+# Try to import llama_cpp for fallback
 try:
     from llama_cpp import Llama
     LLAMA_CPP_AVAILABLE = True
@@ -17,20 +35,51 @@ except ImportError:
     LLAMA_CPP_AVAILABLE = False
     Llama = None
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-# Path to the fine-tuned GGUF model
-MODEL_PATH = Path(__file__).parent / "training_data" / "models" / "ai-gauge-q4_k_m.gguf"
-
-# Model instance (lazy loaded)
+# Model instance for llama_cpp (lazy loaded)
 _model_instance: Optional["Llama"] = None
+
+
+def is_ollama_available() -> bool:
+    """Check if Ollama is running and the ai-gauge model is available."""
+    try:
+        response = requests.get(f"{OLLAMA_URL}/api/tags", timeout=2)
+        if response.status_code == 200:
+            models = response.json().get('models', [])
+            return any(m.get('name', '').startswith(OLLAMA_MODEL) for m in models)
+        return False
+    except:
+        return False
+
+
+def get_ollama_response(prompt: str) -> Optional[str]:
+    """Get a response from Ollama."""
+    try:
+        response = requests.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                    "top_p": 0.9,
+                    "num_predict": 512,
+                }
+            },
+            timeout=60
+        )
+        if response.status_code == 200:
+            return response.json().get('response', '')
+        return None
+    except Exception as e:
+        print(f"⚠️  Ollama request failed: {e}")
+        return None
+
 
 
 def get_model() -> Optional["Llama"]:
     """
-    Get or load the fine-tuned model instance.
+    Get or load the fine-tuned model instance (llama_cpp backend).
     Uses lazy loading to only load the model when first needed.
     """
     global _model_instance
@@ -46,7 +95,6 @@ def get_model() -> Optional["Llama"]:
         
         # Suppress llama.cpp verbose output during loading
         import sys
-        import os
         old_stderr = sys.stderr
         sys.stderr = open(os.devnull, 'w')
         try:
@@ -64,39 +112,22 @@ def get_model() -> Optional["Llama"]:
     return _model_instance
 
 
-def analyze_with_local_model(
+def build_analysis_prompt(
     system_prompt: str,
     user_prompt: str,
     model_id: str,
     metadata: Dict[str, Any]
-) -> Dict[str, Any]:
-    """
-    Analyze an LLM API call using the fine-tuned local model.
-    
-    This replaces the GPT-5.2 call in analyze_task_appropriateness().
-    
-    Returns structured analysis matching the expected output format.
-    """
-    model = get_model()
-    
-    if model is None:
-        # Fall back to default response if model not available
-        return get_fallback_analysis(metadata)
-    
-    # Build the instruction in EXACT format the model was trained on
-    # This MUST match the training data format from train_combined_final.jsonl
-    
-    # Get model pricing info
+) -> str:
+    """Build the analysis prompt for the model."""
     input_cost = metadata.get('input_cost', 'Unknown')
     output_cost = metadata.get('output_cost', 'Unknown')
     provider = metadata.get('provider', 'unknown')
     
-    # Optional context section
     context_str = ""
     if metadata.get('context'):
         context_str = f"\nContext: {json.dumps(metadata.get('context'))}"
     
-    instruction = f"""Analyze this LLM API call and determine if the model choice is appropriate:
+    return f"""Analyze this LLM API call and determine if the model choice is appropriate:
 
 Model: {model_id}
 Provider: {provider}
@@ -118,11 +149,48 @@ Return a JSON object with your analysis including:
 - is_agentic_task: true/false
 - has_tool_use: true/false"""
 
+
+def analyze_with_local_model(
+    system_prompt: str,
+    user_prompt: str,
+    model_id: str,
+    metadata: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Analyze an LLM API call using the fine-tuned model.
+    
+    Supports multiple backends (in priority order):
+      1. Ollama (recommended - easiest for users)
+      2. llama_cpp (local - for advanced users)
+    
+    Args:
+        system_prompt: The system prompt from the LLM call
+        user_prompt: The user prompt from the LLM call
+        model_id: The model being used (e.g., 'gpt-5.2')
+        metadata: Additional metadata about the call
+    
+    Returns:
+        Structured analysis matching the expected output format.
+    """
+    # Build the instruction prompt
+    instruction = build_analysis_prompt(system_prompt, user_prompt, model_id, metadata)
+    
+    # Try Ollama first (recommended - easiest for users)
+    if INFERENCE_BACKEND == 'ollama' or is_ollama_available():
+        response_text = get_ollama_response(instruction)
+        if response_text:
+            result = parse_model_response(response_text)
+            return result
+    
+    # Fall back to llama_cpp (local)
+    model = get_model()
+    if model is None:
+        return get_fallback_analysis(metadata)
+    
     # Format for Phi-3.5 chat template
     prompt = f"<|user|>\n{instruction}<|end|>\n<|assistant|>\n"
     
     try:
-        # Generate response
         output = model(
             prompt,
             max_tokens=512,
@@ -130,10 +198,7 @@ Return a JSON object with your analysis including:
             stop=["<|end|>", "<|user|>", "</s>"],
             echo=False
         )
-        
         response_text = output["choices"][0]["text"].strip()
-        
-        # Parse JSON from response
         result = parse_model_response(response_text)
         return result
         
@@ -312,17 +377,29 @@ def get_fallback_analysis(metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def is_local_model_available() -> bool:
-    """Check if the local model is available for use."""
-    return LLAMA_CPP_AVAILABLE and MODEL_PATH.exists()
+    """Check if the local model is available via Ollama or llama_cpp."""
+    return is_ollama_available() or (LLAMA_CPP_AVAILABLE and MODEL_PATH.exists())
 
 
 def get_model_info() -> Dict[str, Any]:
-    """Get information about the local model."""
+    """Get information about the local model and backends."""
+    ollama_ready = is_ollama_available()
+    llama_cpp_ready = LLAMA_CPP_AVAILABLE and MODEL_PATH.exists()
+    
     return {
-        "available": is_local_model_available(),
-        "model_path": str(MODEL_PATH),
-        "exists": MODEL_PATH.exists(),
-        "llama_cpp_installed": LLAMA_CPP_AVAILABLE,
+        "available": ollama_ready or llama_cpp_ready,
+        "backend": "ollama" if ollama_ready else ("llama_cpp" if llama_cpp_ready else "none"),
+        "ollama": {
+            "available": ollama_ready,
+            "url": OLLAMA_URL,
+            "model": OLLAMA_MODEL
+        },
+        "llama_cpp": {
+            "available": llama_cpp_ready,
+            "model_path": str(MODEL_PATH),
+            "exists": MODEL_PATH.exists(),
+            "installed": LLAMA_CPP_AVAILABLE
+        },
         "model_name": "AI-Gauge Fine-tuned Phi-3.5 (Q4_K_M)"
     }
 

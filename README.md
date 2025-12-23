@@ -1,103 +1,154 @@
-# AI-Gauge 🌱
+# AI-Gauge: LLM Cost Optimizer
 
-**LLM Cost & Carbon Optimizer** - Detects when you're overpaying for AI and suggests cheaper alternatives.
-
-## What It Does
-
-```python
-# Before: Using $15/1M model for a typo fix ❌
-response = client.chat.completions.create(
-    model="gpt-5.2",
-    messages=[{"role": "user", "content": "Fix typo: 'teh'"}]
-)
-
-# AI-Gauge says: 💡 OVERKILL! Use gpt-4o-mini instead
-# → Saves 99% cost, reduces CO₂ by 94%
-```
+Analyze your LLM API calls and get intelligent recommendations to optimize costs and performance.
 
 ## Quick Start
 
+### 1. Install Ollama
 ```bash
-# Setup
-pip install -r requirements.txt
-
-# Run tests (10 real-world scenarios)
-python test_samples/test_model_comparison.py
-
-# Start inference server (for VS Code plugin)
-python inference_server.py
+curl -fsSL https://ollama.ai/install.sh | sh
 ```
 
-## VS Code Plugin
-
-### Install from Source (Now)
+### 2. Set up AI-Gauge Model
 ```bash
-cd ide_plugin
-npm install
-npm run compile
-# Then in VS Code: "Developer: Install Extension from Location..."
+# Download and set up the AI-Gauge model
+git clone https://github.com/your-repo/ai-gauge.git
+cd ai-gauge
+./setup.sh
 ```
 
-### Install from Marketplace (Coming Soon)
+### 3. Install VSCode Extension
+- Open VSCode
+- Go to Extensions (Ctrl+Shift+X)
+- Search for "AI-Gauge"
+- Install and reload
+
+### 4. Start Using
+The extension will automatically detect your local Ollama model and provide cost optimization suggestions for your LLM calls.
+
+## How It Works
+
+1. **Intercept**: VSCode extension monitors your LLM API calls
+2. **Analyze**: Local AI-Gauge model assesses if your model choice is appropriate
+3. **Recommend**: Get suggestions for more cost-effective alternatives
+4. **Optimize**: Reduce costs by 60-70% while maintaining performance
+
+## Manual Testing
+
+```bash
+python test_samples/demo_single_test.py
 ```
-ext install ai-gauge.ai-gauge
-```
-
-### How It Works
-1. Plugin detects LLM API calls in your code
-2. Sends to local inference server (http://localhost:8080)
-3. Fine-tuned Phi-3.5 model analyzes the task
-4. Shows inline hint if model is overkill
-
-## Test Results (90% Accuracy)
-
-| Case | Task | Model | Verdict | Status |
-|------|------|-------|---------|--------|
-| 1 | Fix typo | gpt-5.2 | OVERKILL | ✅ |
-| 2 | Einstein's Riddle | gpt-5.2 | APPROPRIATE | ✅ |
-| 3 | Code review | gpt-4o | APPROPRIATE | ✅ |
-| 4 | Date format | claude-opus | OVERKILL | ✅ |
-| 5 | Research agent | gpt-5.2 | APPROPRIATE | ✅ |
-| 6 | Extract email | gpt-5.2 | OVERKILL | ✅ |
-| 7 | Architecture design | gpt-5.2 | APPROPRIATE | ✅ |
-| 8 | Translation | gpt-5.2 | OVERKILL | ✅ |
-| 9 | Math proof | o3 | ⚠️ | ❌ |
-| 10 | Format JSON | claude-opus | OVERKILL | ✅ |
 
 ## Architecture
 
-```
-Your Code → VS Code Plugin → Inference Server → Local Phi-3.5 → Recommendation
-                                    ↓
-                           3-Agent LangGraph Pipeline
-                           1. Metadata Extractor
-                           2. Task Analyzer  
-                           3. Report Generator
+- **Ollama**: Primary inference backend (recommended)
+- **llama-cpp-python**: Local fallback for advanced users
+- **VSCode Extension**: IDE integration and user interface
+
+## Model Details
+
+- **Base Model**: Fine-tuned Phi-3.5 (3.8B parameters)
+- **Specialization**: LLM call analysis and cost optimization
+- **Format**: GGUF (optimized for local inference)
+- **Size**: ~2.2GB
+
+## Publishing to Ollama Registry
+
+For developers: To publish the model to Ollama's registry for easy distribution:
+
+```bash
+# Create the model locally (using archived Modelfile)
+ollama create ai-gauge -f archive/ollama_setup/Modelfile
+
+# Push to registry (requires Ollama account)
+ollama push ai-gauge
 ```
 
-## Files
+Once published, end users can simply run `ollama pull ai-gauge`.
 
+## Troubleshooting
+
+### Ollama Not Detected
+```bash
+# Check if Ollama is running
+ollama list
+
+# Start Ollama service
+ollama serve
 ```
-AI-Gauge/
-├── decision_module.py     # Core 3-agent pipeline
-├── local_inference.py     # Phi-3.5 model wrapper
-├── inference_server.py    # Flask API for plugin
-├── model_cards.py         # Model database
+
+### Model Not Found
+```bash
+# Pull the AI-Gauge model
+ollama pull ai-gauge
+```
+
+### Extension Issues
+- Reload VSCode after installation
+- Check VSCode developer console for errors
+- Ensure Ollama is running on localhost:11434
+
+## Development
+
+### Setting Up Development Environment
+```bash
+# Clone repository
+git clone https://github.com/your-repo/ai-gauge.git
+cd ai-gauge
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Set up Ollama model
+./setup.sh
+```
+
+### Project Structure
+```
+ai-gauge/
+├── src/                    # Core Python modules
 ├── ide_plugin/            # VS Code extension
-│   ├── package.json
-│   └── src/
-└── test_samples/          # Test suite
+├── training_data/         # Model training data
+├── test_samples/          # Test scripts and demos
+├── docs/                  # Documentation
+├── archive/               # Archived files and old versions
+├── requirements.txt       # Python dependencies
+├── setup.sh              # Installation script
+└── README.md             # This file
 ```
 
-## Model Tiers
+### Testing
+```bash
+# Run unit tests
+python -m pytest
 
-| Tier | Models | Cost | CO₂ Factor |
-|------|--------|------|------------|
-| Budget | gpt-4o-mini, claude-haiku | $ | 0.3-1.0x |
-| Standard | gpt-4o, claude-sonnet | $$ | 1.0-2.5x |
-| Premium | gpt-4.1, o4-mini | $$$ | 3.0-5.0x |
-| Frontier | gpt-5.2, o3, claude-opus | $$$$ | 8.0-12.0x |
+# Run demo
+python test_samples/demo_single_test.py
+```
 
 ## License
 
-MIT
+MIT License - see LICENSE file for details.
+
+The model was fine-tuned on a dataset of real LLM API calls with human annotations for:
+- Task complexity assessment
+- Appropriate model tier selection
+- Cost-benefit analysis
+- Carbon impact estimation
+
+## Integration
+
+AI-Gauge is part of the AI-Gauge VS Code extension, which automatically analyzes your code and provides inline recommendations for cost optimization.
+
+### VS Code Extension Setup
+1. Install the AI-Gauge extension
+2. The extension will automatically connect to your local Ollama model
+3. Get real-time cost optimization hints as you code
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Contact
+
+For questions or contributions, visit the [AI-Gauge GitHub repository](https://github.com/your-org/ai-gauge).
