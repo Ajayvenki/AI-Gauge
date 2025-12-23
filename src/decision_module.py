@@ -49,17 +49,15 @@ from dotenv import load_dotenv
 # NOTE: OpenAI API is no longer required - using local model only
 # from openai import OpenAI
 
-# Import local inference module for fine-tuned model
+# Import local inference module
 try:
     from local_inference import (
         analyze_with_local_model,
-        is_local_model_available,
-        USE_LOCAL_MODEL
+        get_model_info
     )
     LOCAL_INFERENCE_AVAILABLE = True
 except ImportError:
     LOCAL_INFERENCE_AVAILABLE = False
-    USE_LOCAL_MODEL = False
 
 # LangGraph imports
 from langgraph.graph import StateGraph, END
@@ -536,17 +534,12 @@ RESPONSE FORMAT (JSON ONLY - No markdown!)
 RETURN ONLY THE JSON OBJECT. NO MARKDOWN. NO EXPLANATION."""
 
     # ===========================================================================
-    # USE LOCAL FINE-TUNED MODEL ONLY (No GPT-5.2 fallback)
+    # USE LOCAL INFERENCE (Ollama or llama-cpp)
     # ===========================================================================
     if not LOCAL_INFERENCE_AVAILABLE:
-        raise RuntimeError("Local inference module not available. Install with: pip install llama-cpp-python")
+        raise RuntimeError("Inference module not available. Check local_inference.py import.")
     
-    if not is_local_model_available():
-        raise RuntimeError(
-            "Local AI-Gauge model not found. Ensure ai-gauge-q4_k_m.gguf exists in training_data/models/"
-        )
-    
-    print("🔄 Using local fine-tuned AI-Gauge model for analysis...")
+    print("🔄 Using AI-Gauge model for analysis...")
     try:
         result = analyze_with_local_model(
             system_prompt=metadata.get('system_prompt', ''),
@@ -554,11 +547,11 @@ RETURN ONLY THE JSON OBJECT. NO MARKDOWN. NO EXPLANATION."""
             model_id=model_id,
             metadata=metadata
         )
-        print("✅ Local model analysis complete")
+        print("✅ AI-Gauge model analysis complete")
         return result
     except Exception as e:
         # Return safe defaults on error (no external API fallback)
-        print(f"⚠️  Local model inference failed: {e}")
+        print(f"⚠️  HuggingFace inference failed: {e}")
         return {
             "task_summary": "Unable to analyze - local model error",
             "task_category": "other",
