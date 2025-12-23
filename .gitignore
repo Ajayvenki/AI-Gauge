@@ -208,3 +208,4 @@ Thumbs.db
 
 # Archive folder (if not needed)
 archive/
+training_data/models/
