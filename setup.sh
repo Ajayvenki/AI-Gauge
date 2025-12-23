@@ -115,7 +115,7 @@ main() {
         echo -e "${GREEN}✓${NC} ai-gauge model already exists"
     else
         echo "Pulling ai-gauge model from Ollama registry..."
-        ollama pull ai-gauge
+        ollama pull ajayvenki01/ai-gauge
         echo -e "${GREEN}✓${NC} Model pulled successfully"
     fi
     
