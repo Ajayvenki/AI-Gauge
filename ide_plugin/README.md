@@ -2,73 +2,85 @@
 
 Analyzes LLM API calls in your code and suggests cheaper model alternatives.
 
-## Setup (3 Steps)
+## 🚀 Quick Start (2 Minutes)
 
-### Step 1: Start the Inference Server
-
-```bash
-# In the AI-Gauge root directory
-python inference_server.py
-
-# Server runs at http://localhost:8080
+### 1. Install from VS Code Marketplace
+```
+Ctrl+Shift+X → Search "AI-Gauge" → Install → Reload VS Code
 ```
 
-### Step 2: Build the Extension
+### 2. That's it! ✨
+AI-Gauge automatically:
+- ✅ Installs Ollama (if missing)
+- ✅ Downloads the AI-Gauge analysis model
+- ✅ Configures everything automatically
 
-```bash
-cd ide_plugin
-npm install
-npm run compile
+### 3. Start Coding
+Get instant cost optimization hints as you write LLM API calls!
+
+---
+
+## 🎯 What It Does
+
+AI-Gauge analyzes your code and provides real-time feedback on LLM model usage:
+
+```python
+# Your code:
+response = client.chat.completions.create(
+    model="gpt-4",  # ⚠️ Overkill for simple tasks!
+    messages=[...]
+)
+
+# AI-Gauge shows:
+# 💡 Switch to GPT-3.5-turbo → Save 90% ($4.50 → $0.45 per 1K calls)
 ```
 
-### Step 3: Install in VS Code
+---
 
-**Option A: Install from folder (Development)**
-1. Open VS Code
-2. Press `Cmd+Shift+P` → "Developer: Install Extension from Location..."
-3. Select the `ide_plugin` folder
+## ✨ Features
 
-**Option B: Package and install VSIX**
-```bash
-npm install -g @vscode/vsce
-vsce package
-# Then: "Extensions: Install from VSIX" → select ai-gauge-0.1.0.vsix
-```
+### 🔍 Smart Detection
+- **Auto-Detection**: Finds OpenAI, Anthropic, Google, and custom API calls
+- **Real-Time Analysis**: Analyzes as you type (optional)
+- **Multi-Language**: Python, JavaScript, TypeScript support
 
-## Usage
+### 💰 Cost Optimization
+- **Savings Alerts**: Shows potential cost reductions
+- **Model Recommendations**: Suggests appropriate alternatives
+- **Usage Tracking**: Monitors your API spending patterns
 
-1. Open a Python, JavaScript, or TypeScript file with LLM API calls
-2. The extension automatically detects calls like:
-   ```python
-   client.chat.completions.create(model="gpt-5.2", ...)
-   ```
-3. If the model is overkill, you'll see an inline hint with alternatives
+### 🌱 Environmental Impact
+- **Carbon Tracking**: Estimates CO₂ footprint per API call
+- **Green Suggestions**: Recommends efficient models
+- **Sustainability Focus**: Helps reduce AI's environmental impact
 
-## Commands
+### 🎨 User Experience
+- **Inline Hints**: Cost and latency indicators in your code
+- **Quick Fixes**: One-click model replacement
+- **Hover Details**: Detailed analysis on demand
+
+---
+
+## 🛠️ Commands
 
 - `AI-Gauge: Analyze Current File` - Analyze the active file
 - `AI-Gauge: Analyze Workspace` - Analyze all supported files
 - `AI-Gauge: Toggle Real-Time Analysis` - Enable/disable live analysis
 
-## Settings
+---
+
+## ⚙️ Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `aiGauge.enabled` | true | Enable/disable the extension |
-| `aiGauge.realTimeAnalysis` | false | Analyze as you type |
-| `aiGauge.showInlineHints` | true | Show inline cost hints |
-| `aiGauge.costThreshold` | 20 | Min % savings to show hint |
-| `aiGauge.modelServerUrl` | http://localhost:8080 | Inference server URL |
+| `aiGauge.enabled` | `true` | Enable/disable the extension |
+| `aiGauge.realTimeAnalysis` | `false` | Analyze as you type |
+| `aiGauge.showInlineHints` | `true` | Show inline cost hints |
+| `aiGauge.costThreshold` | `20` | Min % savings to show hint |
 
-## Features
+---
 
-- 🔍 **Auto-Detection**: OpenAI, Anthropic, Google API patterns
-- 💡 **Smart Analysis**: Fine-tuned Phi-3.5 model
-- 💰 **Cost Savings**: Shows savings with alternatives
-- 🌱 **Carbon Estimates**: CO₂ per call
-- ⚡ **Latency Hints**: fast/medium/slow indicators
-
-## Architecture
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -76,96 +88,140 @@ vsce package
 ├─────────────────────────────────────────────────────────────┤
 │  extension.ts          - Main entry, registers providers     │
 │  llmCallDetector.ts    - Detects LLM calls via regex/AST     │
-│  aiGaugeClient.ts      - Calls local Phi-3.5 inference       │
+│  aiGaugeClient.ts      - Calls local Ollama inference        │
 │  diagnosticsProvider.ts - Shows warnings + quick fixes       │
 │  inlineHintsProvider.ts - Shows inline cost/latency hints    │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Local Inference Server (port 8080)              │
-│                  Fine-tuned Phi-3.5 Model                    │
+│              Local Ollama Inference                         │
+│                  Fine-tuned Phi-3.5 Model                   │
 │                                                              │
-│  Endpoint: POST /analyze                                     │
-│  Input: { model_used, provider, context, code_snippet }      │
-│  Output: { verdict, confidence, recommendation, savings }    │
+│  Model: ajayvenki01/ai-gauge                                 │
+│  Runs: Locally on user machine                               │
+│  Privacy: 100% local processing                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Detection Patterns
+---
 
-The extension detects LLM calls using regex patterns:
+## 🔍 Detection Patterns
 
-**OpenAI (Python)**
+The extension detects LLM calls using intelligent patterns:
+
+### OpenAI (Python)
 ```python
 client.chat.completions.create(model="gpt-4o", ...)
+client.beta.chat.completions.parse(model="gpt-4o-mini", ...)
 ```
 
-**Anthropic (Python)**
+### Anthropic (Python)
 ```python
 client.messages.create(model="claude-3-opus", ...)
 ```
 
-**Google (Python)**
+### Google (Python)
 ```python
-genai.GenerativeModel("gemini-pro")
+model = genai.GenerativeModel("gemini-pro")
 ```
 
-## User Experience
+### OpenAI (JavaScript/TypeScript)
+```javascript
+const completion = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [...]
+});
+```
 
-1. **Inline Hints** (always visible):
-   ```python
-   response = client.chat.completions.create(...)  ⚠️ $5.00/1k • slow → 💡 save 90%
-   ```
+---
 
-2. **Diagnostics** (squiggly underline):
-   - Yellow information squiggle on overkill model usage
-   - Hover for detailed analysis
+## 💡 User Experience Examples
 
-3. **Quick Fix** (lightbulb):
-   - Click to replace model with recommended alternative
+### Inline Hints (always visible):
+```python
+response = client.chat.completions.create(...)  # ⚠️ $5.00/1k • slow → 💡 save 90%
+```
 
-## Configuration
+### Diagnostics (squiggly underline):
+- Yellow information squiggle on overkill model usage
+- Hover for detailed analysis with reasoning
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `aiGauge.enabled` | `true` | Enable/disable extension |
-| `aiGauge.realTimeAnalysis` | `false` | Analyze as you type |
-| `aiGauge.showInlineHints` | `true` | Show inline hints |
-| `aiGauge.costThreshold` | `20` | Min % savings to show |
-| `aiGauge.modelServerUrl` | `http://localhost:8080` | Inference server URL |
+### Quick Fix (lightbulb):
+- Click the lightbulb to replace model with recommended alternative
+- Automatic code transformation
 
-## Development
+---
 
+## 🔧 Manual Setup (Advanced Users Only)
+
+If auto-setup fails, you can manually configure:
+
+### 1. Install Ollama
 ```bash
-# Install dependencies
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+### 2. Pull AI-Gauge Model
+```bash
+ollama pull ajayvenki01/ai-gauge
+```
+
+### 3. Verify Installation
+```bash
+ollama list  # Should show ai-gauge model
+```
+
+---
+
+## 🛠️ Development
+
+For extension developers:
+
+### Prerequisites
+- Node.js 16+
+- VS Code 1.74+
+
+### Setup
+```bash
+cd ide_plugin
 npm install
-
-# Compile
 npm run compile
-
-# Watch mode
-npm run watch
-
-# Package extension
-vsce package
 ```
 
-## Running the Inference Server
-
-The extension requires a local inference server running the fine-tuned Phi-3.5 model:
-
+### Development Commands
 ```bash
-# Using llama.cpp
-./llama-server -m phi-3.5-ai-gauge.gguf -c 4096 --port 8080
-
-# Or using mlx-lm (Apple Silicon)
-mlx_lm.server --model ./mlx_output --port 8080
+npm run watch      # Watch mode compilation
+npm run compile    # One-time compilation
+vsce package       # Create VSIX package
 ```
 
-## Future Enhancements
+### Testing
+- Open the extension in VS Code's Extension Development Host
+- Test with files containing LLM API calls
 
-1. **Real LLM Interception**: Hook into actual API calls at runtime
-2. **Usage Tracking**: Track model usage patterns over time
-3. **Team Analytics**: Aggregate insights across team
-4. **Auto-Remediation**: Automatically downgrade models in non-prod
+---
+
+## 🚀 Future Enhancements
+
+- **Real API Interception**: Hook into actual API calls at runtime
+- **Usage Analytics**: Track model usage patterns over time
+- **Team Insights**: Aggregate cost savings across teams
+- **Auto-Remediation**: Automatically optimize models in development
+- **Multi-IDE Support**: Extend beyond VS Code
+
+---
+
+## 📊 Performance & Privacy
+
+- **⚡ Fast**: Local inference, no network latency
+- **🔒 Private**: All analysis happens locally
+- **📱 Offline**: Works without internet after setup
+- **🧠 Smart**: Fine-tuned Phi-3.5 model for accuracy
+- **🌍 Green**: Helps reduce AI's carbon footprint
+
+---
+
+**Ready to optimize your AI costs? Install AI-Gauge today!** 🚀
+
+[Install from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge)
