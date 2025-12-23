@@ -1,0 +1,129 @@
+{
+  "name": "ai-gauge",
+  "displayName": "AI-Gauge: LLM Cost Optimizer",
+  "description": "AI-Gauge analyzes LLM usage in your code and recommends cost-effective model alternatives. Features automatic Ollama setup for seamless installation.",
+  "version": "0.2.0",
+  "publisher": "Ajayvenki2910",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Linters",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:javascript",
+    "onLanguage:typescript"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiGauge.analyzeCurrentFile",
+        "title": "AI-Gauge: Analyze Current File"
+      },
+      {
+        "command": "aiGauge.analyzeWorkspace",
+        "title": "AI-Gauge: Analyze Workspace"
+      },
+      {
+        "command": "aiGauge.toggleRealTimeAnalysis",
+        "title": "AI-Gauge: Toggle Real-Time Analysis"
+      },
+      {
+        "command": "aiGauge.showSetupStatus",
+        "title": "AI-Gauge: Show Setup Status"
+      }
+    ],
+    "configuration": {
+      "title": "AI-Gauge",
+      "properties": {
+        "aiGauge.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable AI-Gauge analysis"
+        },
+        "aiGauge.realTimeAnalysis": {
+          "type": "boolean",
+          "default": false,
+          "description": "Analyze LLM calls in real-time as you type"
+        },
+        "aiGauge.showInlineHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline cost optimization hints"
+        },
+        "aiGauge.costThreshold": {
+          "type": "number",
+          "default": 20,
+          "description": "Minimum cost savings % to trigger a recommendation"
+        },
+        "aiGauge.modelServerUrl": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "URL of the AI-Gauge inference server"
+        },
+        "aiGauge.useOllamaDirect": {
+          "type": "boolean",
+          "default": false,
+          "description": "Connect directly to Ollama instead of inference server"
+        },
+        "aiGauge.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "URL of the Ollama server (when using direct mode)"
+        },
+        "aiGauge.ollamaModel": {
+          "type": "string",
+          "default": "ai-gauge",
+          "description": "Ollama model name for AI-Gauge"
+        },
+        "aiGauge.useOllama": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use Ollama for local inference (recommended - no API keys needed)"
+        },
+        "aiGauge.ollamaModel": {
+          "type": "string",
+          "default": "ai-gauge",
+          "description": "Ollama model name for AI-Gauge"
+        },
+        "aiGauge.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama server URL"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "aiGauge.analyzeCurrentFile",
+          "group": "aiGauge"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.20.0",
+    "tree-sitter-python": "^0.20.0",
+    "tree-sitter-javascript": "^0.20.0",
+    "tree-sitter-typescript": "^0.20.0"
+  }
+}
