@@ -4,39 +4,11 @@ Complete setup instructions for end users.
 
 ---
 
-## 🚀 Quick Start (Ollama Local - Simplest)
+## 🚀 Quick Start (Automatic Setup)
 
-**Total time: ~3 minutes. Local inference, no API keys needed.**
+**Total time: ~5 minutes. Everything handled automatically.**
 
-### Step 1: Install Ollama
-
-```bash
-# macOS
-brew install ollama
-
-# Linux
-curl -fsSL https://ollama.ai/install.sh | sh
-
-# Windows: Download from https://ollama.ai/download
-```
-
-### Step 2: Run Setup Script
-
-```bash
-# Clone the repository
-git clone https://github.com/your-repo/ai-gauge.git
-cd ai-gauge
-
-# Run automated setup
-./setup.sh
-```
-
-This will:
-- Install Python dependencies
-- Pull the AI-Gauge model from Ollama registry
-- Verify everything works
-
-### Step 3: Install VS Code Extension
+### Step 1: Install VS Code Extension
 
 **Option A: Install from Marketplace (Recommended)**
 ```bash
@@ -46,8 +18,17 @@ This will:
 
 **Option B: Install from VSIX file**
 ```bash
-# Download ai-gauge-0.1.0.vsix from the project releases
+# Download ai-gauge-0.2.0.vsix from the project releases
 # Then in VS Code: Cmd+Shift+P → "Extensions: Install from VSIX..."
+```
+
+### Step 2: Enable AI-Gauge
+The extension will automatically detect and install:
+- ✅ Ollama (if not present)
+- ✅ AI-Gauge model from registry
+- ✅ All necessary configurations
+
+**That's it!** AI-Gauge will now analyze your LLM calls automatically.
 ```
 
 **Option C: Build from Source**
@@ -184,7 +165,7 @@ ollama list
 ollama serve
 
 # Pull model manually if needed
-ollama pull ai-gauge
+ollama pull ajayvenki01/ai-gauge
 ```
 
 ### "Model not found" in Ollama
