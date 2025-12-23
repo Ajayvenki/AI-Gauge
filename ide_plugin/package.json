@@ -1,8 +1,12 @@
 {
   "name": "ai-gauge",
   "displayName": "AI-Gauge: LLM Cost Optimizer",
-  "description": "AI-Gauge analyzes LLM usage in your code and recommends cost-effective model alternatives. Features automatic Ollama setup for seamless installation.",
-  "version": "0.2.0",
+  "description": "AI-Gauge automatically analyzes your LLM API calls and suggests cost-effective alternatives. One-click install with zero configuration - saves 60-70% on AI costs while maintaining performance.",
+  "galleryBanner": {
+    "color": "#1e40af",
+    "theme": "dark"
+  },
+  "version": "0.2.1",
   "publisher": "Ajayvenki2910",
   "engines": {
     "vscode": "^1.85.0"
@@ -59,26 +63,6 @@
           "type": "number",
           "default": 20,
           "description": "Minimum cost savings % to trigger a recommendation"
-        },
-        "aiGauge.modelServerUrl": {
-          "type": "string",
-          "default": "http://localhost:8080",
-          "description": "URL of the AI-Gauge inference server"
-        },
-        "aiGauge.useOllamaDirect": {
-          "type": "boolean",
-          "default": false,
-          "description": "Connect directly to Ollama instead of inference server"
-        },
-        "aiGauge.ollamaUrl": {
-          "type": "string",
-          "default": "http://localhost:11434",
-          "description": "URL of the Ollama server (when using direct mode)"
-        },
-        "aiGauge.ollamaModel": {
-          "type": "string",
-          "default": "ai-gauge",
-          "description": "Ollama model name for AI-Gauge"
         },
         "aiGauge.useOllama": {
           "type": "boolean",
