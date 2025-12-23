@@ -1,0 +1,129 @@
+"use strict";
+/**
+ * Inline Hints Provider
+ *
+ * Shows inline hints next to LLM calls with cost/performance information.
+ * Example: client.chat.completions.create(...)  // $5.00/1k tokens • slow
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.InlineHintsProvider = void 0;
+const vscode = __importStar(require("vscode"));
+class InlineHintsProvider {
+    constructor() {
+        this.hints = new Map();
+        this._onDidChangeInlayHints = new vscode.EventEmitter();
+        this.onDidChangeInlayHints = this._onDidChangeInlayHints.event;
+    }
+    /**
+     * Update hints for a document
+     */
+    updateHints(uri, analyses) {
+        this.hints.set(uri.toString(), analyses);
+        // Trigger refresh - VS Code will call provideInlayHints again
+        this._onDidChangeInlayHints.fire();
+    }
+    provideInlayHints(document, range) {
+        const analyses = this.hints.get(document.uri.toString());
+        if (!analyses)
+            return [];
+        const hints = [];
+        for (const analysis of analyses) {
+            // Only show hints in visible range
+            if (analysis.lineNumber - 1 < range.start.line ||
+                analysis.lineNumber - 1 > range.end.line) {
+                continue;
+            }
+            const line = document.lineAt(analysis.lineNumber - 1);
+            const position = new vscode.Position(analysis.lineNumber - 1, line.text.length);
+            const label = this.formatHintLabel(analysis);
+            const hint = new vscode.InlayHint(position, label, vscode.InlayHintKind.Parameter);
+            hint.paddingLeft = true;
+            hint.tooltip = this.formatTooltip(analysis);
+            hints.push(hint);
+        }
+        return hints;
+    }
+    /**
+     * Format the inline hint label
+     */
+    formatHintLabel(analysis) {
+        const cost = `$${analysis.currentModel.estimatedCostPer1k.toFixed(2)}/1k`;
+        const latency = analysis.currentModel.latencyTier;
+        if (analysis.verdict === 'OVERKILL') {
+            return `  ⚠️ ${cost} • ${latency} → 💡 save ${analysis.costSavingsPercent}%`;
+        }
+        return `  ✓ ${cost} • ${latency}`;
+    }
+    /**
+     * Format the hover tooltip
+     */
+    formatTooltip(analysis) {
+        const md = new vscode.MarkdownString();
+        md.isTrusted = true;
+        md.appendMarkdown(`## AI-Gauge Analysis\n\n`);
+        md.appendMarkdown(`**Verdict:** ${this.getVerdictEmoji(analysis.verdict)} ${analysis.verdict}\n\n`);
+        md.appendMarkdown(`**Confidence:** ${(analysis.confidence * 100).toFixed(0)}%\n\n`);
+        md.appendMarkdown(`### Current Model\n`);
+        md.appendMarkdown(`- **Model:** ${analysis.currentModel.modelId}\n`);
+        md.appendMarkdown(`- **Cost:** $${analysis.currentModel.estimatedCostPer1k.toFixed(2)}/1k tokens\n`);
+        md.appendMarkdown(`- **Latency:** ${analysis.currentModel.latencyTier}\n\n`);
+        if (analysis.recommendedAlternative) {
+            md.appendMarkdown(`### Recommended Alternative\n`);
+            md.appendMarkdown(`- **Model:** ${analysis.recommendedAlternative.modelId}\n`);
+            md.appendMarkdown(`- **Cost:** $${analysis.recommendedAlternative.estimatedCostPer1k.toFixed(2)}/1k tokens\n`);
+            md.appendMarkdown(`- **Latency:** ${analysis.recommendedAlternative.latencyTier}\n\n`);
+            md.appendMarkdown(`### Savings\n`);
+            md.appendMarkdown(`- **Cost:** ${analysis.costSavingsPercent}% reduction\n`);
+            if (analysis.latencySavingsMs > 0) {
+                md.appendMarkdown(`- **Latency:** ${analysis.latencySavingsMs}ms faster\n`);
+            }
+        }
+        if (analysis.reasoning) {
+            md.appendMarkdown(`\n---\n*${analysis.reasoning}*`);
+        }
+        return md;
+    }
+    getVerdictEmoji(verdict) {
+        switch (verdict) {
+            case 'OVERKILL': return '⚠️';
+            case 'APPROPRIATE': return '✅';
+            case 'UNDERPOWERED': return '⬆️';
+            default: return '❓';
+        }
+    }
+}
+exports.InlineHintsProvider = InlineHintsProvider;
+//# sourceMappingURL=inlineHintsProvider.js.map
