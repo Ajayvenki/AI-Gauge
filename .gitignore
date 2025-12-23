@@ -208,4 +208,8 @@ Thumbs.db
 
 # Archive folder (if not needed)
 archive/
+
+# Large model files (use Git LFS or download separately)
+*.gguf
+training_data/models/ai-gauge-q4_k_m.gguf
 training_data/models/
