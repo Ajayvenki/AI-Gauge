@@ -40,10 +40,6 @@ export interface ClientConfig {
     useOllamaDirect: boolean;
     ollamaUrl: string;
     ollamaModel: string;
-    // HuggingFace cloud inference
-    useHuggingFace: boolean;
-    huggingFaceApiKey: string;
-    huggingFaceModel: string;
 }
 
 export class AIGaugeClient {
@@ -65,10 +61,8 @@ export class AIGaugeClient {
      */
     async analyze(call: DetectedLLMCall): Promise<AnalysisResult> {
         try {
-            // Priority: HuggingFace (cloud) > Ollama (local) > Server
-            if (this.config.useHuggingFace && this.config.huggingFaceApiKey) {
-                return await this.analyzeWithHuggingFace(call);
-            } else if (this.config.useOllamaDirect) {
+            // Priority: Ollama (local) > Server
+            if (this.config.useOllamaDirect) {
                 return await this.analyzeWithOllama(call);
             } else {
                 return await this.analyzeWithServer(call);
@@ -77,56 +71,6 @@ export class AIGaugeClient {
             console.warn('AI-Gauge analysis failed, using fallback:', error);
             return this.fallbackAnalysis(call);
         }
-    }
-
-    /**
-     * Analyze using HuggingFace Inference API (simplest setup)
-     */
-    private async analyzeWithHuggingFace(call: DetectedLLMCall): Promise<AnalysisResult> {
-        const prompt = this.buildOllamaPrompt(call);  // Same prompt format works
-        const HF_INFERENCE_URL = 'https://router.huggingface.co';
-        
-        const response = await fetch(
-            `${HF_INFERENCE_URL}/${this.config.huggingFaceModel}`,
-            {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.config.huggingFaceApiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    inputs: `<|user|>\n${prompt}<|end|>\n<|assistant|>\n`,
-                    parameters: {
-                        max_new_tokens: 512,
-                        temperature: 0.1,
-                        top_p: 0.9,
-                        do_sample: true,
-                        return_full_text: false
-                    }
-                })
-            }
-        );
-
-        if (response.status === 503) {
-            // Model is loading - wait and retry
-            console.log('HuggingFace model loading, waiting...');
-            await new Promise(resolve => setTimeout(resolve, 20000));
-            return this.analyzeWithHuggingFace(call);  // Retry once
-        }
-
-        if (!response.ok) {
-            throw new Error(`HuggingFace returned ${response.status}`);
-        }
-
-        const result = await response.json();
-        let responseText = '';
-        if (Array.isArray(result) && result.length > 0) {
-            responseText = result[0].generated_text || '';
-        } else {
-            responseText = result.generated_text || '';
-        }
-        
-        return this.parseOllamaResponse(responseText, call);  // Same parser works
     }
 
     /**

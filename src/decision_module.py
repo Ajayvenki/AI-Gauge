@@ -989,14 +989,13 @@ def format_recommendation_report(
     task_analysis: dict
 ) -> str:
     """
-    Generate a comprehensive, beautifully formatted recommendation report.
-    
+    Generate a clean, focused recommendation report showing only essential information.
+
     Shows:
-    - Collected metadata (tokens, model info, cost, CO₂)
-    - Verdict with appropriate emoji
-    - All models in recommended tier (not just top 3)
-    - Detailed reasoning
-    - Carbon impact with formula
+    a. Metadata collected from user
+    b. AI-Gauge invocation sign
+    c. Outcome (appropriate/not)
+    d. If not appropriate: reason, suggested alternatives, why, CO2/cost savings
     """
     minimum_tier = task_analysis.get('minimum_tier', 'budget')
     input_tokens = carbon_analysis.get('input_tokens', 0)
@@ -1008,146 +1007,75 @@ def format_recommendation_report(
     current_carbon = carbon_analysis.get('current_model_carbon', {})
     current_co2 = current_carbon.get('co2_grams', 0)
     carbon_factor = current_model.get('carbon_factor', 1.0)
-    
-    # Build the report sections
+
     lines = []
-    
-    # ==================== HEADER ====================
+
+    # ==================== AI-GAUGE INVOCATION SIGN ====================
     lines.append("")
-    lines.append("╔" + "═" * 78 + "╗")
-    lines.append("║" + "🌱 AI-GAUGE RECOMMENDATION REPORT".center(78) + "║")
-    lines.append("╠" + "═" * 78 + "╣")
-    
-    if verdict == "OVERKILL":
-        lines.append("║" + "  ✅ VERDICT: OVERKILL — Cost savings available!".ljust(78) + "║")
-    elif verdict == "APPROPRIATE":
-        lines.append("║" + "  👍 VERDICT: APPROPRIATE — Good model choice".ljust(78) + "║")
-    else:
-        lines.append("║" + f"  ⚠️  VERDICT: {verdict}".ljust(78) + "║")
-    
-    lines.append("╚" + "═" * 78 + "╝")
-    
+    lines.append("🌱 AI-GAUGE: Analyzing intercepted LLM call...")
+    lines.append("")
+
     # ==================== METADATA SECTION ====================
+    lines.append("📋 Metadata collected from user:")
+    lines.append(f"   • Model: {current_model.get('display_name', 'Unknown')} ({current_model.get('model_id', 'N/A')})")
+    lines.append(f"   • Provider: {current_model.get('provider', 'Unknown')}")
+    lines.append(f"   • Estimated tokens: {input_tokens} input + {output_tokens} output = {total_tokens} total")
+    lines.append(f"   • Current cost: ${current_cost:.6f} per call")
+    lines.append(f"   • Current CO₂: {current_co2:.4f}g per call")
     lines.append("")
-    lines.append("┌" + "─" * 78 + "┐")
-    lines.append("│" + " 📋 METADATA (Collected from intercepted LLM call)".ljust(78) + "│")
-    lines.append("├" + "─" * 78 + "┤")
-    lines.append("│" + f"   Model Requested:  {current_model.get('display_name', 'Unknown')} ({current_model.get('model_id', 'N/A')})".ljust(78) + "│")
-    lines.append("│" + f"   Provider:         {current_model.get('provider', 'Unknown').upper()}".ljust(78) + "│")
-    lines.append("│" + f"   Current Tier:     {current_model.get('tier', 'unknown').upper()}".ljust(78) + "│")
-    lines.append("│" + "".ljust(78) + "│")
-    lines.append("│" + f"   Estimated Tokens: {input_tokens} input / {output_tokens} output (≈{total_tokens} total)".ljust(78) + "│")
-    lines.append("│" + f"   Cost per 1M:      ${current_model.get('input_cost_per_1m', 0):.2f} input / ${current_model.get('output_cost_per_1m', 0):.2f} output".ljust(78) + "│")
-    lines.append("│" + f"   Est. Request Cost: ${current_cost:.6f}".ljust(78) + "│")
-    lines.append("│" + "".ljust(78) + "│")
-    lines.append("│" + f"   Carbon Factor:    {carbon_factor}x baseline (GPT-3.5 = 1.0)".ljust(78) + "│")
-    lines.append("│" + f"   Est. CO₂:         {current_co2:.4f}g  (tokens × factor × 0.0001 = {total_tokens} × {carbon_factor} × 0.0001)".ljust(78) + "│")
-    lines.append("└" + "─" * 78 + "┘")
-    
-    # ==================== TASK ANALYSIS SECTION ====================
-    lines.append("")
-    lines.append("┌" + "─" * 78 + "┐")
-    lines.append("│" + " 🧠 TASK ANALYSIS".ljust(78) + "│")
-    lines.append("├" + "─" * 78 + "┤")
-    task_summary = task_analysis.get('summary', 'Unknown task')[:60]
-    lines.append("│" + f"   Task Summary:     {task_summary}".ljust(78) + "│")
-    lines.append("│" + f"   Category:         {task_analysis.get('category', 'unknown')}".ljust(78) + "│")
-    lines.append("│" + f"   Complexity:       {task_analysis.get('complexity', 'unknown').upper()}".ljust(78) + "│")
-    lines.append("│" + f"   Minimum Tier:     {minimum_tier.upper()}".ljust(78) + "│")
-    lines.append("└" + "─" * 78 + "┘")
-    
-    # ==================== VERDICT SECTION ====================
-    lines.append("")
-    lines.append("┌" + "─" * 78 + "┐")
-    lines.append("│" + " 🎯 ANALYSIS RESULT".ljust(78) + "│")
-    lines.append("├" + "─" * 78 + "┤")
-    
-    if verdict == "OVERKILL":
-        lines.append("│" + "   ✅ This task can be handled by CHEAPER models!".ljust(78) + "│")
-        lines.append("│" + "".ljust(78) + "│")
-        
-        # ==================== ALL MODELS IN TIER ====================
-        tier_models = get_all_models_in_tier(minimum_tier)
-        if tier_models:
-            lines.append("│" + f"   📦 ALL {minimum_tier.upper()} TIER MODELS (Any of these will work):".ljust(78) + "│")
-            lines.append("│" + "".ljust(78) + "│")
-            
-            for model in tier_models:
-                # Calculate savings
-                model_cost = model.input_cost_per_1m + model.output_cost_per_1m
-                current_total_cost = current_model.get('input_cost_per_1m', 0) + current_model.get('output_cost_per_1m', 0)
-                cost_savings = ((current_total_cost - model_cost) / current_total_cost * 100) if current_total_cost > 0 else 0
-                
-                # Calculate CO₂ savings
-                model_co2 = total_tokens * model.carbon_factor * 0.0001
-                co2_savings = ((current_co2 - model_co2) / current_co2 * 100) if current_co2 > 0 else 0
-                
-                lines.append("│" + f"   ├─ {model.display_name} ({model.provider})".ljust(78) + "│")
-                lines.append("│" + f"   │     Cost: ${model.input_cost_per_1m:.2f}/${model.output_cost_per_1m:.2f} per 1M tokens".ljust(78) + "│")
-                lines.append("│" + f"   │     Savings: {cost_savings:.0f}% cost, {co2_savings:.0f}% CO₂".ljust(78) + "│")
-                lines.append("│" + f"   │     CO₂: {model_co2:.4f}g (vs {current_co2:.4f}g current)".ljust(78) + "│")
-                lines.append("│" + "   │".ljust(78) + "│")
-        
-        # ==================== REASONING SECTION ====================
-        lines.append("│" + "".ljust(78) + "│")
-        lines.append("├" + "─" * 78 + "┤")
-        lines.append("│" + " 📝 REASONING".ljust(78) + "│")
-        lines.append("├" + "─" * 78 + "┤")
-        
+
+    # ==================== OUTCOME ====================
+    if is_appropriate:
+        lines.append("✅ Outcome: APPROPRIATE")
+        lines.append("   Your model choice is well-suited for this task.")
+        lines.append("")
+        lines.append("💡 Recommendation: Keep your current model - no changes needed.")
+    else:
+        lines.append("⚠️  Outcome: NOT APPROPRIATE (OVERKILL)")
+        lines.append("")
+
+        # ==================== REASON ====================
+        lines.append("📝 Reason:")
         complexity = task_analysis.get('complexity', 'unknown')
         current_tier = current_model.get('tier', 'unknown')
-        
-        lines.append("│" + f"   • Task Complexity: {complexity.upper()}".ljust(78) + "│")
-        lines.append("│" + f"   • Current model ({current_model.get('model_id', 'N/A')}) is in the {current_tier.upper()} tier".ljust(78) + "│")
-        lines.append("│" + f"   • Minimum required tier for this task: {minimum_tier.upper()}".ljust(78) + "│")
-        lines.append("│" + f"   • Using {current_tier.upper()} tier for a {minimum_tier.upper()}-level task wastes resources".ljust(78) + "│")
-        lines.append("│" + "".ljust(78) + "│")
-        
-        # Complexity reasoning from model
-        complexity_reasoning = task_analysis.get('complexity_reasoning', '')
-        if complexity_reasoning:
-            # Word wrap the reasoning
-            words = complexity_reasoning.split()
-            line = "   • Model reasoning: "
-            for word in words[:20]:  # Limit to first 20 words
-                if len(line) + len(word) + 1 < 75:
-                    line += word + " "
-                else:
-                    lines.append("│" + line.ljust(78) + "│")
-                    line = "     " + word + " "
-            if line.strip():
-                lines.append("│" + line.ljust(78) + "│")
-        
-        # ==================== CARBON IMPACT SECTION ====================
-        lines.append("│" + "".ljust(78) + "│")
-        lines.append("├" + "─" * 78 + "┤")
-        lines.append("│" + " 🌍 CARBON IMPACT".ljust(78) + "│")
-        lines.append("├" + "─" * 78 + "┤")
-        lines.append("│" + f"   • Current model CO₂: {current_co2:.4f}g per call".ljust(78) + "│")
-        
+        lines.append(f"   • Task complexity: {complexity.upper()}")
+        lines.append(f"   • Current model tier: {current_tier.upper()}")
+        lines.append(f"   • Minimum required tier: {minimum_tier.upper()}")
+        lines.append(f"   • Issue: Using {current_tier.upper()} tier for {minimum_tier.upper()}-level task")
+        lines.append("")
+
+        # ==================== SUGGESTED ALTERNATIVES ====================
+        lines.append("💡 Suggested alternatives:")
+        tier_models = get_all_models_in_tier(minimum_tier)
         if tier_models:
-            avg_tier_co2 = sum(total_tokens * m.carbon_factor * 0.0001 for m in tier_models) / len(tier_models)
-            co2_reduction = ((current_co2 - avg_tier_co2) / current_co2 * 100) if current_co2 > 0 else 0
-            lines.append("│" + f"   • Average {minimum_tier} tier CO₂: {avg_tier_co2:.4f}g per call".ljust(78) + "│")
-            lines.append("│" + f"   • Potential CO₂ reduction: {co2_reduction:.0f}%".ljust(78) + "│")
-        
-        lines.append("│" + "".ljust(78) + "│")
-        lines.append("│" + "   💡 RECOMMENDATION: Switch to any model in the suggested tier to save".ljust(78) + "│")
-        lines.append("│" + "      money and reduce environmental impact without sacrificing quality.".ljust(78) + "│")
-        
-    else:
-        # APPROPRIATE case
-        lines.append("│" + "   👍 Your model choice is well-suited for this task.".ljust(78) + "│")
-        lines.append("│" + "".ljust(78) + "│")
-        lines.append("│" + f"   • Task requires {minimum_tier.upper()} tier capabilities".ljust(78) + "│")
-        lines.append("│" + f"   • Current model is at the appropriate tier".ljust(78) + "│")
-        lines.append("│" + f"   • Est. CO₂ per call: {current_co2:.4f}g".ljust(78) + "│")
-        lines.append("│" + "".ljust(78) + "│")
-        lines.append("│" + "   No changes recommended.".ljust(78) + "│")
-    
-    lines.append("└" + "─" * 78 + "┘")
-    lines.append("")
-    
+            # Group models by provider
+            models_by_provider = {}
+            for model in tier_models[:6]:  # Show up to 6 models total
+                provider = model.provider
+                if provider not in models_by_provider:
+                    models_by_provider[provider] = []
+                models_by_provider[provider].append(model)
+            
+            # Display grouped by provider
+            for provider, models in models_by_provider.items():
+                lines.append(f"   • {provider.upper()}:")
+                for model in models[:2]:  # Max 2 per provider
+                    # Calculate savings
+                    model_cost = (model.input_cost_per_1m * input_tokens + model.output_cost_per_1m * output_tokens) / 1_000_000
+                    cost_savings = current_cost - model_cost
+                    cost_savings_percent = (cost_savings / current_cost * 100) if current_cost > 0 else 0
+
+                    # Calculate CO₂ savings
+                    model_co2 = total_tokens * model.carbon_factor * 0.0001
+                    co2_savings = current_co2 - model_co2
+                    co2_savings_percent = (co2_savings / current_co2 * 100) if current_co2 > 0 else 0
+
+                    lines.append(f"      - {model.display_name} (${model_cost:.6f} per call, save ${cost_savings:.6f} {cost_savings_percent:.0f}%, {co2_savings:.4f}g CO₂)")
+                lines.append("")
+            
+            lines.append(f"   Why: {minimum_tier} tier models suitable for {complexity.lower()} tasks")
+            lines.append("")
+
     return "\n".join(lines)
 
 def reporter_agent(state: AgentState) -> AgentState:
