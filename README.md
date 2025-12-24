@@ -2,7 +2,7 @@
 
 > **Have you ever wondered if your model choice is actually appropriate for the task?** 💭
 >
-> You're pouring money into GPT-4 for simple text corrections, or burning through tokens on tasks that could run perfectly on GPT-3.5. Meanwhile, your AI usage is quietly contributing to carbon emissions. What if you could get intelligent recommendations *before* making the API call?
+> You're pouring money into GPT-5 for simple text corrections, or burning through tokens on tasks that could run perfectly on GPT-4 or mini or nano models. Meanwhile, your AI usage is quietly contributing to carbon emissions. What if you could get intelligent recommendations *before* making the API call?
 
 AI-Gauge is a VS Code extension that automatically analyzes your LLM API calls and recommends the most cost-effective models **before execution**. Save 60-70% on AI costs while maintaining performance and reducing your carbon footprint. 🌱
 
