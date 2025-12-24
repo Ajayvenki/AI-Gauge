@@ -213,3 +213,6 @@ archive/
 *.gguf
 training_data/models/ai-gauge-q4_k_m.gguf
 training_data/models/
+
+# Project memory files (internal development notes)
+docs/MEMORY.md

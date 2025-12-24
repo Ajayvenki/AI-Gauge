@@ -31,9 +31,6 @@ export interface ClientConfig {
     useOllamaDirect: boolean;
     ollamaUrl: string;
     ollamaModel: string;
-    useHuggingFace: boolean;
-    huggingFaceApiKey: string;
-    huggingFaceModel: string;
 }
 export declare class AIGaugeClient {
     private config;
@@ -46,10 +43,6 @@ export declare class AIGaugeClient {
      * Analyze a detected LLM call
      */
     analyze(call: DetectedLLMCall): Promise<AnalysisResult>;
-    /**
-     * Analyze using HuggingFace Inference API (simplest setup)
-     */
-    private analyzeWithHuggingFace;
     /**
      * Analyze using the inference server (recommended)
      */

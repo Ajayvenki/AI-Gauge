@@ -1,161 +1,58 @@
-# 🚨 STOP! Your LLM API Bills Are Out of Control
+# AI-Gauge: Smart AI Cost Optimization
 
-**"Every API call is a money printer for OpenAI - but you're the one paying."**
+AI-Gauge is a VS Code extension that automatically analyzes your LLM API calls and recommends the most cost-effective models before execution. Save 60-70% on AI costs while maintaining performance and reducing your carbon footprint.
 
-## 💡 Motto: Smart AI Usage, Not Blind Consumption
+## The Problem
 
-AI-Gauge automatically analyzes your LLM API calls and recommends the perfect model for each task - saving you 60-70% on costs while maintaining performance.
+AI API costs are spiraling out of control. Organizations spend thousands monthly on over-provisioned models, with no visibility into which calls are truly necessary. Traditional monitoring tools only show costs after the fact - by then it's too late.
 
----
+## The Solution
 
-## 🎯 The Problem: AI Costs Are Exploding
+AI-Gauge intercepts your API calls **before** they execute, analyzing task complexity with a local AI model to recommend the optimal model. Get cost and carbon estimates upfront, not as a surprise bill.
 
-- **$100K+ monthly bills** for enterprise AI usage
-- **Over-provisioning** - using GPT-4 for simple tasks
-- **No visibility** into which calls are actually necessary
-- **Carbon footprint** growing with inefficient AI usage
+### Key Benefits
+- **60-70% Cost Savings**: Automatically switch to appropriate models
+- **Carbon Reduction**: Track and minimize AI's environmental impact
+- **Zero Configuration**: Install and start saving immediately
+- **Privacy-First**: All analysis happens locally on your machine
 
-**Traditional solutions? Manual code reviews, guesswork, and expensive consultants.**
+## How It Works
 
----
+1. **Intercept**: Catches LLM API calls in real-time as you code
+2. **Analyze**: Uses local AI to assess task complexity and requirements
+3. **Recommend**: Suggests the most efficient model with cost/carbon estimates
+4. **Execute**: You decide whether to proceed with the recommendation
 
-## ⚡ The Solution: AI-Gauge - Your AI Cost Guardian
+## Quick Start
 
-AI-Gauge is a VS Code extension that automatically:
-- **Intercepts** your LLM API calls in real-time
-- **Analyzes** task complexity with local AI
-- **Recommends** the most cost-effective model
-- **Tracks** your savings and carbon impact
+1. Install from VS Code Marketplace: Search "AI-Gauge"
+2. The extension automatically sets up Ollama and downloads the analysis model
+3. Start coding - get inline recommendations for every API call
 
-**One-click install. Zero configuration. Instant savings.**
+## Real Impact
 
----
+**Mid-size SaaS Company Case Study:**
+- **Before**: $15K/month on GPT-4 calls
+- **After**: $4.5K/month (70% savings)
+- **Performance**: 98% task success rate maintained
+- **Carbon**: 12 tons CO₂ equivalent saved annually
 
-## 🔥 Key Features
+## Architecture & Technical Details
 
-### 🧠 Intelligent Analysis
-- **Local AI Model**: Phi-3.5 fine-tuned for cost optimization
-- **Real-time Detection**: Monitors OpenAI, Anthropic, and other APIs
-- **Context Awareness**: Understands task complexity and requirements
+For detailed technical information, see our [Architecture Guide](docs/ARCHITECTURE.md) covering:
+- System design and data flow
+- Model selection and training
+- Privacy and security considerations
+- Performance optimization
 
-### 💰 Cost Optimization
-- **60-70% Savings**: Switch from GPT-4 to GPT-3.5 or local models when appropriate
-- **Usage Tracking**: Monitor your API spending patterns
-- **Budget Alerts**: Get notified when costs exceed thresholds
+## Contributing
 
-### 🌱 Environmental Impact
-- **Carbon Tracking**: See your AI's environmental footprint
-- **Green Recommendations**: Prefer efficient models for sustainability
-- **Impact Dashboard**: Monthly carbon emission reports
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-### 🔧 Developer Experience
-- **VS Code Integration**: Inline hints and diagnostics
-- **Auto-Setup**: Installs everything automatically
-- **Privacy-First**: All analysis happens locally
-
----
-
-## 🤔 Why AI-Gauge vs. Alternatives?
-
-| Feature | AI-Gauge | Manual Analysis | Cost Monitoring Tools | AI Code Review |
-|---------|----------|----------------|----------------------|----------------|
-| **Real-time Analysis** | ✅ | ❌ | ❌ | ❌ |
-| **Local Processing** | ✅ | ✅ | ❌ | ❌ |
-| **Automatic Recommendations** | ✅ | ❌ | ❌ | ❌ |
-| **Carbon Tracking** | ✅ | ❌ | ❌ | ❌ |
-| **Zero Setup** | ✅ | ❌ | ❌ | ❌ |
-| **VS Code Native** | ✅ | ❌ | ❌ | ❌ |
-
-**AI-Gauge doesn't just monitor costs - it actively prevents waste.**
-
----
-
-## 📊 Real-World Impact: $50K Saved in 3 Months
-
-### Case Study: Mid-Size SaaS Company
-- **Before**: $15K/month on GPT-4 API calls
-- **After AI-Gauge**: $4.5K/month (70% savings)
-- **Performance**: Maintained 98% task success rate
-- **Carbon Reduction**: 12 tons CO2 equivalent saved
-
-### Your Potential Savings Calculator
-```
-Current Monthly Spend: $______ (your API costs)
-
-AI-Gauge Savings: × 0.65 (35% minimum)
-Monthly Savings: $______
-
-Annual Savings: $______
-```
-
----
-
-## 🌍 Carbon Tracking: Your AI's Environmental Impact
-
-**Think of AI-Gauge as a "carbon mileage tracker" for your code.**
-
-Just like how fuel efficiency apps help reduce car emissions, AI-Gauge shows you the environmental cost of your AI decisions:
-
-- **GPT-4 API Call**: ~0.5g CO2 (equivalent to driving 1 meter)
-- **GPT-3.5 API Call**: ~0.05g CO2 (90% less emissions)
-- **Local Model**: ~0.001g CO2 (99.8% less emissions)
-
-**Small changes, big impact. Your AI usage has a carbon footprint - AI-Gauge helps you minimize it.**
-
----
-
-## 🚀 Quick Start (2 Minutes)
-
-### 1. Install from VS Code Marketplace
-```
-Ctrl+Shift+X → Search "AI-Gauge" → Install → Reload
-```
-
-### 2. That's it! ✨
-AI-Gauge automatically:
-- Installs Ollama (if needed)
-- Downloads the AI model
-- Starts monitoring your API calls
-
-### 3. See Savings Instantly
-Get inline recommendations as you code!
-
----
-
-## 🛠️ Technical Details
-
-- **Model**: Fine-tuned Phi-3.5 (3.8B parameters)
-- **Backend**: Ollama for local inference
-- **Extension**: TypeScript + VS Code API
-- **Privacy**: 100% local processing
-- **Compatibility**: OpenAI, Anthropic, and custom APIs
-
----
-
-## 📈 Roadmap
-
-- [ ] Multi-language support (Python, JavaScript, Go)
-- [ ] Team dashboards and cost sharing
-- [ ] Integration with cloud cost monitoring
-- [ ] Advanced carbon impact modeling
-- [ ] Enterprise SSO and compliance features
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for details.
-
-**Found a bug? Have a feature request?** [Open an issue](https://github.com/your-org/ai-gauge/issues)
-
----
-
-## 📄 License
+## License
 
 MIT License - Free for personal and commercial use.
 
 ---
 
-**Ready to slash your AI costs and carbon footprint? Install AI-Gauge today!** 🚀
-
-[Install from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge) | [GitHub Repository](https://github.com/your-org/ai-gauge)
+**Ready to optimize your AI costs?** [Install AI-Gauge](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge)
