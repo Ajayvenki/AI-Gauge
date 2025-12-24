@@ -20,8 +20,11 @@ def run_single_demo():
         system_prompt="You are a proofreader.",
         context={},
         tools=[],
-        verbose=True
+        verbose=False  # Hide agent execution details from users
     )
+    
+    # Print only the final clean report
+    print(result['summary'])
     
     return result
 
