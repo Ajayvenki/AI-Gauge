@@ -40,7 +40,7 @@ def health():
         'backend': model_info.get('backend', 'unknown'),
         'model_available': model_info.get('available', False),
         'ollama': model_info.get('ollama', {}),
-        'llama_cpp': model_info.get('llama_cpp', {})
+        # 'llama_cpp': model_info.get('llama_cpp', {})
     })
 
 

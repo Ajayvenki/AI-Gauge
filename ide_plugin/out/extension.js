@@ -59,11 +59,7 @@ function getClientConfig() {
         serverUrl: config.get('modelServerUrl') || 'http://localhost:8080',
         useOllamaDirect: config.get('useOllamaDirect') || false,
         ollamaUrl: config.get('ollamaUrl') || 'http://localhost:11434',
-        ollamaModel: config.get('ollamaModel') || 'ai-gauge',
-        // HuggingFace settings (cloud - simplest)
-        useHuggingFace: config.get('useHuggingFace') || true,
-        huggingFaceApiKey: config.get('huggingFaceApiKey') || '',
-        huggingFaceModel: config.get('huggingFaceModel') || 'ajayvenkatesan/ai-gauge'
+        ollamaModel: config.get('ollamaModel') || 'ai-gauge'
     };
 }
 async function activate(context) {

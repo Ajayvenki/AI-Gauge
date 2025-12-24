@@ -9,6 +9,7 @@ Supports multiple backends:
 
 import json
 import os
+import re
 import requests
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -25,18 +26,18 @@ OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434')
 OLLAMA_MODEL = os.getenv('AI_GAUGE_MODEL', 'ai-gauge')
 
 # Path to the fine-tuned GGUF model (for llama_cpp backend)
-MODEL_PATH = Path(__file__).parent / "training_data" / "models" / "ai-gauge-q4_k_m.gguf"
+# MODEL_PATH = Path(__file__).parent / "training_data" / "models" / "ai-gauge-q4_k_m.gguf"
 
 # Try to import llama_cpp for fallback
-try:
-    from llama_cpp import Llama
-    LLAMA_CPP_AVAILABLE = True
-except ImportError:
-    LLAMA_CPP_AVAILABLE = False
-    Llama = None
+# try:
+#     from llama_cpp import Llama
+#     LLAMA_CPP_AVAILABLE = True
+# except ImportError:
+#     LLAMA_CPP_AVAILABLE = False
+#     Llama = None
 
 # Model instance for llama_cpp (lazy loaded)
-_model_instance: Optional["Llama"] = None
+# _model_instance: Optional["Llama"] = None
 
 
 def is_ollama_available() -> bool:
@@ -61,7 +62,7 @@ def get_ollama_response(prompt: str) -> Optional[str]:
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.1,
+                    "temperature": 0.0,  # Changed from 0.1 to 0.0 for more deterministic responses
                     "top_p": 0.9,
                     "num_predict": 512,
                 }
@@ -77,39 +78,39 @@ def get_ollama_response(prompt: str) -> Optional[str]:
 
 
 
-def get_model() -> Optional["Llama"]:
-    """
-    Get or load the fine-tuned model instance (llama_cpp backend).
-    Uses lazy loading to only load the model when first needed.
-    """
-    global _model_instance
-    
-    if not LLAMA_CPP_AVAILABLE:
-        print("⚠️  llama_cpp not available. Install with: pip install llama-cpp-python")
-        return None
-    
-    if _model_instance is None:
-        if not MODEL_PATH.exists():
-            # Silent fail - model not found
-            return None
-        
-        # Suppress llama.cpp verbose output during loading
-        import sys
-        old_stderr = sys.stderr
-        sys.stderr = open(os.devnull, 'w')
-        try:
-            _model_instance = Llama(
-                model_path=str(MODEL_PATH),
-                n_ctx=4096,           # Context window
-                n_threads=4,          # CPU threads
-                n_gpu_layers=-1,      # Use all GPU layers (Metal on Mac)
-                verbose=False
-            )
-        finally:
-            sys.stderr.close()
-            sys.stderr = old_stderr
-    
-    return _model_instance
+# def get_model() -> Optional["Llama"]:
+#     """
+#     Get or load the fine-tuned model instance (llama_cpp backend).
+#     Uses lazy loading to only load the model when first needed.
+#     """
+#     global _model_instance
+#     
+#     if not LLAMA_CPP_AVAILABLE:
+#         print("⚠️  llama_cpp not available. Install with: pip install llama-cpp-python")
+#         return None
+#     
+#     if _model_instance is None:
+#         if not MODEL_PATH.exists():
+#             # Silent fail - model not found
+#             return None
+#         
+#         # Suppress llama.cpp verbose output during loading
+#         import sys
+#         old_stderr = sys.stderr
+#         sys.stderr = open(os.devnull, 'w')
+#         try:
+#             _model_instance = Llama(
+#                 model_path=str(MODEL_PATH),
+#                 n_ctx=4096,           # Context window
+#                 n_threads=4,          # CPU threads
+#                 n_gpu_layers=-1,      # Use all GPU layers (Metal on Mac)
+#                 verbose=False
+#             )
+#         finally:
+#             sys.stderr.close()
+#             sys.stderr = old_stderr
+#     
+#     return _model_instance
 
 
 def build_analysis_prompt(
@@ -159,9 +160,7 @@ def analyze_with_local_model(
     """
     Analyze an LLM API call using the fine-tuned model.
     
-    Supports multiple backends (in priority order):
-      1. Ollama (recommended - easiest for users)
-      2. llama_cpp (local - for advanced users)
+    Supports Ollama backend only (simplified from multiple backends).
     
     Args:
         system_prompt: The system prompt from the LLM call
@@ -175,42 +174,21 @@ def analyze_with_local_model(
     # Build the instruction prompt
     instruction = build_analysis_prompt(system_prompt, user_prompt, model_id, metadata)
     
-    # Try Ollama first (recommended - easiest for users)
+    # Try Ollama only (simplified - no llama_cpp fallback)
     if INFERENCE_BACKEND == 'ollama' or is_ollama_available():
         response_text = get_ollama_response(instruction)
         if response_text:
             result = parse_model_response(response_text)
             return result
     
-    # Fall back to llama_cpp (local)
-    model = get_model()
-    if model is None:
-        return get_fallback_analysis(metadata)
-    
-    # Format for Phi-3.5 chat template
-    prompt = f"<|user|>\n{instruction}<|end|>\n<|assistant|>\n"
-    
-    try:
-        output = model(
-            prompt,
-            max_tokens=512,
-            temperature=0.1,
-            stop=["<|end|>", "<|user|>", "</s>"],
-            echo=False
-        )
-        response_text = output["choices"][0]["text"].strip()
-        result = parse_model_response(response_text)
-        return result
-        
-    except Exception as e:
-        print(f"⚠️  Local model inference failed: {e}")
-        return get_fallback_analysis(metadata)
+    # No fallback available - return default analysis
+    return get_fallback_analysis(metadata)
 
 
 def parse_model_response(response_text: str) -> Dict[str, Any]:
     """
     Parse the model's response to extract JSON.
-    Handles various formats the model might produce.
+    Handles various formats the model might produce, including malformed JSON.
     """
     result = None
     
@@ -231,17 +209,40 @@ def parse_model_response(response_text: str) -> Dict[str, Any]:
                 result = json.loads(clean)
                 break
             except json.JSONDecodeError:
-                continue
+                # Try to fix common JSON issues
+                try:
+                    # Remove newlines from string values
+                    fixed = re.sub(r'(".*?)(?:\n|\r\n?)(")', r'\1 \2', clean)
+                    # Fix trailing commas
+                    fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
+                    result = json.loads(fixed)
+                    break
+                except:
+                    continue
     
-    # Try to find JSON object in text
+    # Try to extract key values using regex as last resort
     if result is None:
-        start = response_text.find("{")
-        end = response_text.rfind("}") + 1
-        if start != -1 and end > start:
-            try:
-                result = json.loads(response_text[start:end])
-            except json.JSONDecodeError:
-                pass
+        try:
+            # Extract key JSON fields using regex
+            complexity_match = re.search(r'"actual_complexity"\s*:\s*"([^"]*)"', response_text)
+            tier_match = re.search(r'"minimum_capable_tier"\s*:\s*"([^"]*)"', response_text)
+            appropriate_match = re.search(r'"is_model_appropriate"\s*:\s*(true|false)', response_text)
+            
+            if complexity_match and tier_match and appropriate_match:
+                result = {
+                    "actual_complexity": complexity_match.group(1),
+                    "minimum_capable_tier": tier_match.group(1),
+                    "is_model_appropriate": appropriate_match.group(1).lower() == 'true',
+                    "task_analysis": "Extracted from malformed JSON",
+                    "complexity_reasoning": "Extracted from malformed JSON",
+                    "appropriateness_reasoning": "Extracted from malformed JSON",
+                    "estimated_output_tokens": 200,
+                    "requires_extended_reasoning": False,
+                    "is_agentic_task": False,
+                    "has_tool_use": False
+                }
+        except:
+            pass
     
     # Fall back to default if parsing failed
     if result is None:
@@ -377,29 +378,29 @@ def get_fallback_analysis(metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def is_local_model_available() -> bool:
-    """Check if the local model is available via Ollama or llama_cpp."""
-    return is_ollama_available() or (LLAMA_CPP_AVAILABLE and MODEL_PATH.exists())
+    """Check if the local model is available via Ollama only."""
+    return is_ollama_available()
 
 
 def get_model_info() -> Dict[str, Any]:
     """Get information about the local model and backends."""
     ollama_ready = is_ollama_available()
-    llama_cpp_ready = LLAMA_CPP_AVAILABLE and MODEL_PATH.exists()
+    # llama_cpp_ready = LLAMA_CPP_AVAILABLE and MODEL_PATH.exists()
     
     return {
-        "available": ollama_ready or llama_cpp_ready,
-        "backend": "ollama" if ollama_ready else ("llama_cpp" if llama_cpp_ready else "none"),
+        "available": ollama_ready,  # or llama_cpp_ready,
+        "backend": "ollama" if ollama_ready else "none",  # ("llama_cpp" if llama_cpp_ready else "none"),
         "ollama": {
             "available": ollama_ready,
             "url": OLLAMA_URL,
             "model": OLLAMA_MODEL
         },
-        "llama_cpp": {
-            "available": llama_cpp_ready,
-            "model_path": str(MODEL_PATH),
-            "exists": MODEL_PATH.exists(),
-            "installed": LLAMA_CPP_AVAILABLE
-        },
+        # "llama_cpp": {
+        #     "available": llama_cpp_ready,
+        #     "model_path": str(MODEL_PATH),
+        #     "exists": MODEL_PATH.exists(),
+        #     "installed": LLAMA_CPP_AVAILABLE
+        # },
         "model_name": "AI-Gauge Fine-tuned Phi-3.5 (Q4_K_M)"
     }
 
