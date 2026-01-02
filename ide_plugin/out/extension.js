@@ -856,15 +856,18 @@ async function startInferenceServer(context) {
             }
             // Find Python executable - prefer venv if available
             let pythonCmd = process.platform === 'win32' ? 'python' : 'python3'; // Default fallback
-            // Check for venv in multiple locations (workspace root, runtime dir, parent dir)
+            // Check for venv in multiple locations - PRIORITIZE runtime dir first (where setup.sh creates it)
             const venvLocations = [
+                path.join(runtimeDir, 'venv', 'bin', 'python'), // runtime/venv (setup.sh creates here)
+                path.join(runtimeDir, 'venv', 'Scripts', 'python.exe'), // Windows
                 path.join(repoPath, 'venv', 'bin', 'python'), // workspace/venv
                 path.join(repoPath, 'venv', 'Scripts', 'python.exe'), // Windows
-                path.join(runtimeDir, 'venv', 'bin', 'python'), // runtime/venv
-                path.join(runtimeDir, 'venv', 'Scripts', 'python.exe'), // Windows
+                path.join(runtimeDir, '.venv', 'bin', 'python'), // runtime/.venv
+                path.join(runtimeDir, '.venv', 'Scripts', 'python.exe'), // Windows
                 path.join(repoPath, '.venv', 'bin', 'python'), // workspace/.venv
                 path.join(repoPath, '.venv', 'Scripts', 'python.exe'), // Windows
             ];
+            console.log('AI-Gauge: Searching for venv in:', venvLocations.slice(0, 4).join(', '));
             let foundVenv = false;
             for (const venvPath of venvLocations) {
                 if (fs.existsSync(venvPath)) {
