@@ -66,9 +66,39 @@ function getClientConfig() {
     };
 }
 /**
- * Detect AI-Gauge repository path
+ * Detect AI-Gauge repository path with smart prioritization
  */
 function detectRepoPath() {
+    console.log('AI-Gauge: Starting repository detection...');
+    // PRIORITY 1: Check current workspace for runtime packages (most important)
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+        console.log('AI-Gauge: Checking current workspace for runtime packages...');
+        for (const folder of vscode.workspace.workspaceFolders) {
+            const workspacePath = folder.uri.fsPath;
+            console.log('AI-Gauge: Checking workspace path:', workspacePath);
+            if (isRuntimePackage(workspacePath)) {
+                console.log('AI-Gauge: ✅ Found runtime package in current workspace:', workspacePath);
+                return workspacePath;
+            }
+        }
+        console.log('AI-Gauge: No runtime package found in current workspace');
+    }
+    else {
+        console.log('AI-Gauge: No workspace folders found');
+    }
+    // PRIORITY 2: Check current workspace for any valid repo (fallback)
+    if (vscode.workspace.workspaceFolders) {
+        console.log('AI-Gauge: Checking current workspace for any valid repo...');
+        for (const folder of vscode.workspace.workspaceFolders) {
+            const workspacePath = folder.uri.fsPath;
+            if (isValidRepo(workspacePath)) {
+                console.log('AI-Gauge: Found repository in current workspace:', workspacePath);
+                return workspacePath;
+            }
+        }
+    }
+    // PRIORITY 3: Only check common locations as last resort
+    console.log('AI-Gauge: Checking common locations as last resort...');
     const possiblePaths = [
         path.join(os.homedir(), 'ai-gauge'),
         path.join(os.homedir(), 'AI-Gauge'),
@@ -77,22 +107,36 @@ function detectRepoPath() {
         path.join(os.homedir(), 'Documents', 'ai-gauge'),
         path.join(os.homedir(), 'Documents', 'AI-Gauge')
     ];
-    // Check current workspace
-    if (vscode.workspace.workspaceFolders) {
-        for (const folder of vscode.workspace.workspaceFolders) {
-            const workspacePath = folder.uri.fsPath;
-            if (isValidRepo(workspacePath)) {
-                return workspacePath;
-            }
-        }
-    }
-    // Check common locations
+    // Check common locations for runtime packages first
     for (const repoPath of possiblePaths) {
-        if (isValidRepo(repoPath)) {
+        if (isRuntimePackage(repoPath)) {
+            console.log('AI-Gauge: Found runtime package at common location:', repoPath);
             return repoPath;
         }
     }
+    // Then check for any valid repo
+    for (const repoPath of possiblePaths) {
+        if (isValidRepo(repoPath)) {
+            console.log('AI-Gauge: Found repository at common location:', repoPath);
+            return repoPath;
+        }
+    }
+    console.log('AI-Gauge: No valid repository found anywhere');
     return undefined;
+}
+/**
+ * Check if path contains valid AI-Gauge repository or runtime package
+ */
+function isRuntimePackage(repoPath) {
+    try {
+        const fs = require('fs');
+        const serverPath = path.join(repoPath, 'inference_server.py');
+        const requirementsPath = path.join(repoPath, 'requirements.txt');
+        return fs.existsSync(serverPath) && fs.existsSync(requirementsPath);
+    }
+    catch {
+        return false;
+    }
 }
 /**
  * Check if path contains valid AI-Gauge repository or runtime package
@@ -120,14 +164,35 @@ async function activate(context) {
     // Detect repository path
     repoPath = detectRepoPath();
     if (!repoPath) {
-        vscode.window.showErrorMessage('AI-Gauge repository not found. Please clone the repository and run setup.sh first.', 'Open Repository').then(selection => {
-            if (selection === 'Open Repository') {
-                vscode.env.openExternal(vscode.Uri.parse('https://github.com/ajayvenki2910/ai-gauge'));
+        console.log('AI-Gauge: No repository found - showing setup instructions');
+        const setupMessage = `AI-Gauge Setup Required
+
+To use AI-Gauge in this workspace:
+
+1. Download the runtime package:
+   https://github.com/ajayvenki2910/ai-gauge/releases/latest
+
+2. Extract it to your workspace folder
+
+3. Run: ./setup.sh
+
+4. Reload VS Code window
+
+The extension will then automatically detect and use the runtime package.`;
+        vscode.window.showErrorMessage('AI-Gauge runtime package not found in current workspace.', 'Show Setup Instructions').then(selection => {
+            if (selection === 'Show Setup Instructions') {
+                vscode.window.showInformationMessage(setupMessage, { modal: true });
             }
         });
         return;
     }
     console.log('AI-Gauge: Repository found at', repoPath);
+    // Create status bar item
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem.text = "$(graph-line) AI-Gauge";
+    statusBarItem.tooltip = "AI-Gauge is analyzing your LLM calls";
+    statusBarItem.show();
+    context.subscriptions.push(statusBarItem);
     // Initialize status bar
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBarItem.command = 'aiGauge.showSetupStatus';
@@ -189,7 +254,24 @@ async function performAutoSetup(context) {
     if (dependencies.ollamaInstalled && dependencies.modelExists && dependencies.pythonReady && dependencies.serverAvailable && dependencies.serverRunning) {
         context.globalState.update('aiGauge.setupComplete', true);
         // Start server if not already running
-        await ensureInferenceServer(context);
+        const serverStarted = await ensureInferenceServer(context);
+        if (!serverStarted) {
+            vscode.window.showErrorMessage('AI-Gauge server failed to start. Please check that the runtime package is properly set up.', 'Troubleshoot').then(selection => {
+                if (selection === 'Troubleshoot') {
+                    vscode.window.showInformationMessage('Troubleshooting Steps:\n\n' +
+                        '1. Ensure runtime package is extracted in current workspace\n' +
+                        '2. Run: ./setup.sh in the runtime package folder\n' +
+                        '3. Check VS Code output panel for detailed error messages\n' +
+                        '4. Verify Ollama is running: ollama list\n' +
+                        '5. Reload VS Code window', { modal: true });
+                }
+            });
+            statusBarItem.text = "$(error) AI-Gauge: Server Error";
+            statusBarItem.tooltip = "Click to troubleshoot server issues";
+            return false;
+        }
+        statusBarItem.text = "$(check) AI-Gauge: Active";
+        statusBarItem.tooltip = "AI-Gauge is analyzing your LLM calls for cost optimization";
         return true;
     }
     // Ask user if they want auto-setup

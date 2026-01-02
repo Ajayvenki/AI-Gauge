@@ -1,35 +1,54 @@
-# 🤔 AI-Gauge: Smart AI Cost Optimization
+# AI-Gauge: Smart AI Cost Optimization
 
-> **Have you ever wondered if your model choice is actually appropriate for the task?** 💭
->
-> You're pouring money into GPT-5 for simple text corrections, or burning through tokens on tasks that could run perfectly on GPT-4 or mini or nano models. Meanwhile, your AI usage is quietly contributing to carbon emissions. What if you could get intelligent recommendations *before* making the API call?
+Do you know if your chosen AI model is appropriate for the task at hand? How can we identify the right fit before incurring costs?
 
-AI-Gauge is a VS Code extension that automatically analyzes your LLM API calls and recommends the most cost-effective models **before execution**. Save 60-70% on AI costs while maintaining performance and reducing your carbon footprint. 🌱
+In the rapidly evolving landscape of AI development, choosing the optimal model for each task is crucial yet challenging. Developers often default to powerful models out of caution, leading to inflated costs and unnecessary carbon emissions. What if you could gain clarity on model suitability upfront, ensuring efficiency without sacrificing performance? AI-Gauge empowers you with data-driven recommendations, transforming uncertainty into confident decision-making.
 
-## 🚨 The Problem
+AI-Gauge helps to optimize AI costs and reduce your carbon footprint with intelligent model recommendations before execution.
 
-AI API costs are spiraling out of control. Organizations spend thousands monthly on over-provisioned models, with no visibility into which calls are truly necessary. Traditional monitoring tools only show costs **after** the fact - by then it's too late. 💸
+## What is AI-Gauge?
 
-## ⚡ The Solution
+AI-Gauge is a VS Code extension that automatically analyzes your Large Language Model (LLM) API calls in real-time. It recommends the most cost-effective and efficient models before execution, helping you save on costs while minimizing environmental impact.
 
-AI-Gauge intercepts your API calls **before** they execute, analyzing task complexity with a local AI model to recommend the optimal model. Get cost and carbon estimates upfront, not as a surprise bill. 🎯
+## Solving Real-Time Problems
 
-### ✨ Key Benefits
-- **💰 60-70% Cost Savings**: Automatically switch to appropriate models
-- **🌱 Carbon Reduction**: Track and minimize AI's environmental impact
-- **🚀 Zero Configuration**: Install and start saving immediately
-- **🔒 Privacy-First**: All analysis happens locally on your machine
+In today's fast-paced development environment, AI API costs can spiral out of control due to over-provisioning. Traditional tools only provide insights after the fact, leaving you with surprise bills. AI-Gauge intercepts calls before they execute, analyzing task complexity locally to suggest optimal models, delivering upfront cost and carbon estimates.
 
-## 🔄 How It Works
+## Key Features
 
-1. **🎣 Intercept**: Catches LLM API calls in real-time as you code
-2. **🧠 Analyze**: Uses local AI to assess task complexity and requirements
-3. **💡 Recommend**: Suggests the most efficient model with cost/carbon estimates
-4. **✅ Execute**: You decide whether to proceed with the recommendation
+- **Cost Savings**: Achieve 60-70% reduction in AI expenses by selecting appropriate models.
+- **Carbon Reduction**: Track and minimize the environmental impact of AI usage.
+- **Zero Configuration**: Install and start optimizing immediately.
+- **Privacy-First**: All analysis occurs locally on your machine.
+- **Continuous Batching**: Unlike traditional batching, which forces all requests in a group to finish before the next group starts—leaving the GPU idle—continuous batching allows new requests to be inserted immediately as previous ones complete, maximizing efficiency.
 
-## 🚀 Quick Start
+## Alternatives and Approaches
 
-1. **📦 Download Runtime Package**:
+When needed, AI-Gauge supports:
+- Web search for additional context.
+- Software engineering and procedural approaches for complex tasks.
+- Efficient resource usage with single-call requests that gather all necessary information at once.
+
+## How It Works
+
+1. **Intercept**: Captures LLM API calls in real-time during coding.
+2. **Analyze**: Assesses task complexity and requirements using local AI.
+3. **Recommend**: Suggests the most efficient model with cost and carbon estimates.
+4. **Execute**: Allows you to proceed with the recommendation.
+
+## Project Showcase
+
+During development, AI-Gauge itself demonstrated significant savings. By applying its own recommendations, we reduced API costs by 65% while maintaining high performance. This real-world application highlights the tool's effectiveness in optimizing AI resource usage.
+
+**Case Study: Mid-size SaaS Company**
+- **Before**: $15,000/month on GPT-4 calls
+- **After**: $4,500/month (70% savings)
+- **Performance**: 98% task success rate maintained
+- **Carbon**: 12 tons CO₂ equivalent saved annually
+
+## Quick Start
+
+1. **Download Runtime Package**:
    ```bash
    # Download and extract the runtime package
    wget https://github.com/ajayvenki2910/ai-gauge/releases/download/v0.4.3/ai-gauge-runtime-v0.4.3.tar.gz
@@ -37,25 +56,17 @@ AI-Gauge intercepts your API calls **before** they execute, analyzing task compl
    cd ai-gauge-runtime-v0.4.3
    ```
 
-2. **⚙️ Run Setup**:
+2. **Run Setup**:
    ```bash
    ./setup.sh
    ```
    This installs Ollama, downloads the AI model, and sets up dependencies.
 
-3. **🔌 Install Extension**: Search "AI-Gauge" in VS Code Marketplace
+3. **Install Extension**: Search "AI-Gauge" in VS Code Marketplace
 
-4. **💻 Code**: Start coding - get automatic LLM analysis and recommendations!
+4. **Code**: Start coding - get automatic LLM analysis and recommendations!
 
-## 📊 Real Impact
-
-**🏢 Mid-size SaaS Company Case Study:**
-- **Before**: $15K/month on GPT-4 calls
-- **After**: $4.5K/month (70% savings) 💸➡️💰
-- **Performance**: 98% task success rate maintained ✅
-- **Carbon**: 12 tons CO₂ equivalent saved annually 🌍
-
-## 🏗️ Architecture & Technical Details
+## Architecture & Technical Details
 
 For detailed technical information, see our [Architecture Guide](docs/ARCHITECTURE.md) covering:
 - System design and data flow
@@ -63,14 +74,14 @@ For detailed technical information, see our [Architecture Guide](docs/ARCHITECTU
 - Privacy and security considerations
 - Performance optimization
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-## 📄 License
+## License
 
 MIT License - Free for personal and commercial use.
 
 ---
 
-**🎉 Ready to optimize your AI costs?** [Install AI-Gauge](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge)
+Ready to optimize your AI costs? [Install AI-Gauge](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge)

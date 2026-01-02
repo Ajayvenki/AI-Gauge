@@ -5,6 +5,35 @@ All notable changes to AI-Gauge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2025-01-02
+
+### Added
+- **Smart Repository Detection**: Prioritizes runtime packages in current workspace over old development repos
+- **Enhanced User Feedback**: Clear setup instructions when runtime package not found
+- **Status Bar Indicator**: Shows AI-Gauge status (Active/Error) with troubleshooting tooltips
+- **Comprehensive Logging**: Detailed console logs for debugging repository detection
+
+### Changed
+- **Detection Priority Order**:
+  1. Runtime packages in current workspace (highest priority)
+  2. Any valid repo in current workspace
+  3. Runtime packages in common locations
+  4. Any valid repo in common locations (lowest priority)
+- **Error Messages**: More helpful troubleshooting guidance instead of generic errors
+- **Extension Size**: 21.35 KB (optimized production build)
+
+### Fixed
+- **Workspace Detection**: Extension now correctly finds runtime packages in new workspaces
+- **Server Startup Errors**: Better error handling with actionable troubleshooting steps
+- **Old Repo Conflicts**: No longer falls back to ~/ai-gauge when runtime package exists in workspace
+- **User Experience**: Clear guidance for setup instead of cryptic error messages
+
+### Technical
+- **Improved `detectRepoPath()`**: Smart prioritization logic with detailed logging
+- **Added `isRuntimePackage()`**: Dedicated function for runtime package detection
+- **Enhanced Status Bar**: Visual feedback and troubleshooting access
+- **Better Error Recovery**: Graceful handling of server startup failures
+
 ## [0.4.4] - 2025-01-02
 
 ### Added
