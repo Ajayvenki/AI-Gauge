@@ -86,7 +86,7 @@ def analyze():
         # Run analysis with local model
         result = analyze_llm_call(
             model=model_used,
-            prompt=code_snippet[:500],  # Use code snippet as proxy for prompt
+            prompt=code_snippet[:2000],  # Use code snippet as proxy for prompt (increased for complex prompts)
             system_prompt="",
             context={
                 "type": "api_call",

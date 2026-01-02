@@ -86,9 +86,9 @@ class LLMCallDetector {
             while ((match = pattern.exec(text)) !== null) {
                 const startPos = document.positionAt(match.index);
                 const endPos = document.positionAt(match.index + match[0].length);
-                // Get surrounding context (5 lines before and after)
-                const contextStart = Math.max(0, startPos.line - 5);
-                const contextEnd = Math.min(document.lineCount - 1, endPos.line + 5);
+                // Get surrounding context (30 lines before and after to capture full prompts)
+                const contextStart = Math.max(0, startPos.line - 30);
+                const contextEnd = Math.min(document.lineCount - 1, endPos.line + 10);
                 const surroundingCode = this.getLines(document, contextStart, contextEnd);
                 const call = this.extractCallMetadata(match[0], surroundingCode, provider, match[1], // model ID from capture group
                 new vscode.Range(startPos, endPos), startPos.line + 1);
