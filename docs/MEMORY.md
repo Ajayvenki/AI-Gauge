@@ -66,6 +66,8 @@ cd ai-gauge-runtime-v0.4.3
 - **Server Startup**: Modified `startInferenceServer()` to use correct path for runtime packages
 - **Backward Compatibility**: Supports both runtime package and development repository structures
 - **Error Resolution**: Fixed "fetch failed" errors when extension couldn't locate local installation
+- **Package Optimization**: Reduced extension size from 33KB to 21KB by excluding development files (.d.ts, .js.map)
+- **Clean Packaging**: Added .vscodeignore to only include essential runtime files
 
 #### Next Steps
 - Upload `ai-gauge-runtime-v0.4.3.tar.gz` to GitHub releases
