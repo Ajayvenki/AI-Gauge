@@ -130,18 +130,24 @@ export class AIGaugeClient {
      * Build prompt for direct Ollama analysis
      */
     private buildOllamaPrompt(call: DetectedLLMCall): string {
-        return `You are an AI model analyzer. Analyze this LLM API call and respond with ONLY a JSON object.
+        return `You are an AI model analyzer. Analyze this LLM API call and determine if the model choice is appropriate.
 
-Task: ${call.surroundingCode}
+TASK TO ANALYZE: ${call.surroundingCode}
 
-Model being used: ${call.modelId} (${call.provider})
+MODEL BEING USED: ${call.modelId} (${call.provider})
 
-Respond with ONLY this JSON structure, no other text:
+INSTRUCTIONS:
+- Read the actual task in the code above
+- Determine if the model is appropriate for THIS SPECIFIC TASK
+- Do NOT copy example responses
+- Analyze the real complexity of the task described
+
+Respond with ONLY a JSON object in this exact format:
 {
-  "is_model_appropriate": false,
-  "minimum_capable_tier": "budget",
-  "actual_complexity": "simple", 
-  "appropriateness_reasoning": "Simple text correction doesn't need GPT-4"
+  "is_model_appropriate": true_or_false_based_on_actual_task,
+  "minimum_capable_tier": "budget|standard|premium|frontier",
+  "actual_complexity": "trivial|simple|moderate|complex|expert", 
+  "appropriateness_reasoning": "Your analysis of this specific task"
 }`;
     }
 
