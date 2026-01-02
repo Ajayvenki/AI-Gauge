@@ -1005,7 +1005,10 @@ def format_recommendation_report(
     # Current model info
     current_cost = carbon_analysis.get('current_model_cost', 0)
     current_carbon = carbon_analysis.get('current_model_carbon', {})
-    current_co2 = current_carbon.get('co2_grams', 0)
+    current_co2 = current_carbon.get('co2_grams', 0) if current_carbon and isinstance(current_carbon, dict) else 0
+    # Ensure current_co2 is always a number
+    if current_co2 is None or not isinstance(current_co2, (int, float)):
+        current_co2 = 0.0
     carbon_factor = current_model.get('carbon_factor', 1.0)
 
     lines = []
