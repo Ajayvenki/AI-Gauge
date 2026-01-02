@@ -5,23 +5,15 @@
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/Ajayvenki2910.ai-gauge)](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
----
+Identifying the right AI model for each task is crucial yet challenging. Developers often default to powerful models out of caution, leading to inflated costs and unnecessary carbon emissions. AI-Gauge provides clarity on model suitability upfront, ensuring efficiency without sacrificing performance. AI-Gauge offers data-driven recommendations, transforming uncertainty into confident decision-making.
 
 ## What is AI-Gauge?
 
-Do you know if your chosen AI model is appropriate for the task at hand? How can we identify the right fit before incurring costs?
-
-In the rapidly evolving landscape of AI development, choosing the optimal model for each task is crucial yet challenging. Developers often default to powerful models out of caution, leading to inflated costs and unnecessary carbon emissions. What if you could gain clarity on model suitability upfront, ensuring efficiency without sacrificing performance? AI-Gauge empowers you with data-driven recommendations, transforming uncertainty into confident decision-making.
-
-AI-Gauge is a VS Code extension that automatically analyzes your Large Language Model (LLM) API calls in real-time. It recommends the most cost-effective and efficient models before execution, helping you save on costs while minimizing environmental impact.
-
----
+AI-Gauge is a VS Code extension that automatically analyzes Large Language Model (LLM) API calls in real-time. It recommends the most cost-effective and efficient models before execution, helping save on costs while minimizing environmental impact.
 
 ## Solving Real-Time Problems
 
-In today's fast-paced development environment, AI API costs can spiral out of control due to over-provisioning. Traditional tools only provide insights after the fact, leaving you with surprise bills. AI-Gauge intercepts calls before they execute, analyzing task complexity locally to suggest optimal models, delivering upfront cost and carbon estimates.
-
----
+In today's fast-paced development environment, AI API costs can spiral out of control due to over-provisioning. Traditional tools only provide insights after the fact, leaving surprise bills. AI-Gauge intercepts calls before they execute, analyzing task complexity locally to suggest optimal models, delivering upfront cost and carbon estimates.
 
 ## Key Features
 
@@ -31,8 +23,6 @@ In today's fast-paced development environment, AI API costs can spiral out of co
 - ⚡ **Real-Time Results**: Instant feedback as you code.
 - 🤖 **Agent-Driven Intelligence**: Powered by LangGraph multi-agent orchestration.
 
----
-
 ## How It Works
 
 1. **Intercept**: Captures LLM API calls in real-time during coding.
@@ -40,15 +30,13 @@ In today's fast-paced development environment, AI API costs can spiral out of co
 3. **Recommend**: Suggests the most efficient model with cost and carbon estimates.
 4. **Execute**: Allows you to proceed with the recommendation.
 
----
-
 ## Our AI Model
 
-**The Carbon Paradox**: Using a large LLM to measure carbon emissions would burn carbon. That's why AI-Gauge uses a smart, fine-tuned Small Language Model (SLM) — Microsoft's Phi-3.5 — running 100% locally via Ollama. No cloud calls. No carbon footprint from the analysis itself.
+Are we burning carbon to measure carbon? No. That's why AI-Gauge uses a smart, fine-tuned Small Language Model (SLM) — Microsoft's Phi-3.5 — running 100% locally via Ollama. No cloud calls. No carbon footprint from the analysis itself.
 
 ### Why Phi-3.5?
 
-We chose Microsoft's Phi-3.5 as our base model because:
+Microsoft's Phi-3.5 was chosen as the base model because:
 
 - **Efficiency**: Lightweight and fast for real-time analysis without heavy resource demands.
 - **Reasoning Capabilities**: Strong performance in task complexity assessment and model selection.
@@ -65,12 +53,15 @@ Fine-tuning on over 1000 labeled examples provides:
 - **Accuracy**: Precise complexity classification and reliable recommendations.
 - **Generalization**: Robust handling of varied and edge-case scenarios.
 
-Training an SLM for this task wasn't straightforward. We faced multiple challenges:
+While 1000 samples may seem modest, it's a solid start that demonstrates strong reasoning capabilities for task complexity assessment.
+
+Training an SLM for this task wasn't straightforward. Multiple challenges were faced:
 
 - **Data Imbalance**: Most examples were "simple" tasks; complex ones were rare.
 - **Boundary Ambiguity**: Where does "moderate" end and "complex" begin?
 - **Context Limitations**: SLMs can't process entire codebases, so we optimized prompt extraction.
 - **Bias in Data**: Ensuring unbiased representations across different task types.
+- **Hyperparameter Tuning**: Finding the right learning rate, batch size, and LoRA parameters took iterative experimentation to converge the loss effectively, balancing overfitting and generalization.
 
 #### Fine-Tuning Details
 
@@ -82,9 +73,7 @@ Training an SLM for this task wasn't straightforward. We faced multiple challeng
   - LoRA Rank: 16
   - LoRA Alpha: 32
 
-This trained SLM enables AI-Gauge to deliver the intelligent insights behind our 60-70% cost savings.
-
----
+The trained SLM enables AI-Gauge to deliver the intelligent insights behind our 60-70% cost savings.
 
 ## Project Showcase
 
@@ -93,8 +82,6 @@ AI-Gauge optimized its own development, slashing API costs by 65% while keeping 
 A mid-size SaaS company cut monthly LLM spend from $15K to $4.5K, saving 70% and 12 tons of CO₂ annually.
 
 Real impact: Efficiency without compromise.
-
----
 
 ## Quick Start
 
@@ -139,8 +126,6 @@ Open any Python/TypeScript file with LLM API calls. AI-Gauge will automatically:
 - Analyze task complexity
 - Show cost hints inline
 
----
-
 ## Best Practices and Recommendations
 
 AI-Gauge serves as an intelligent AI alternative for optimizing LLM usage. To maximize efficiency:
@@ -148,8 +133,6 @@ AI-Gauge serves as an intelligent AI alternative for optimizing LLM usage. To ma
 - Use web search for additional context when needed.
 - Employ software engineering and procedural approaches for complex tasks.
 - Optimize resource usage by making single-call requests that gather all necessary information at once.
-
----
 
 ## Architecture
 
@@ -168,19 +151,13 @@ AI-Gauge serves as an intelligent AI alternative for optimizing LLM usage. To ma
 
 For detailed technical docs, see [Architecture Guide](docs/ARCHITECTURE.md).
 
----
-
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
 MIT License — Free for personal and commercial use.
-
----
 
 <p align="center">
   <b>Ready to measure before you spend?</b><br>
