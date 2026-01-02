@@ -296,37 +296,61 @@ async function performAutoSetup(context: vscode.ExtensionContext): Promise<boole
         // Quick check if everything is still working
         const healthCheck = await checkDependenciesHealth();
         if (healthCheck.healthy) {
+            // Still need to ensure server is running!
+            console.log('AI-Gauge: Dependencies healthy, ensuring server is running...');
+            const serverRunning = await checkServerHealth();
+            if (!serverRunning) {
+                console.log('AI-Gauge: Server not running, starting it now...');
+                const serverStarted = await ensureInferenceServer(context);
+                if (!serverStarted) {
+                    console.error('AI-Gauge: Failed to start server');
+                    statusBarItem.text = "$(error) AI-Gauge: Server Error";
+                    statusBarItem.tooltip = "Server failed to start. Click to troubleshoot.";
+                    return false;
+                }
+            }
+            console.log('AI-Gauge: Server is running');
+            statusBarItem.text = "$(check) AI-Gauge: Active";
+            statusBarItem.tooltip = "AI-Gauge is analyzing your LLM calls for cost optimization";
             return true;
         }
     }
 
     // Perform full setup check
     const dependencies = await checkDependencies(context);
+    console.log('AI-Gauge: Dependencies check:', JSON.stringify(dependencies));
 
-    if (dependencies.ollamaInstalled && dependencies.modelExists && dependencies.pythonReady && dependencies.serverAvailable && dependencies.serverRunning) {
+    // If all prerequisites are met (Ollama, model, Python, server files exist), try to start the server
+    if (dependencies.ollamaInstalled && dependencies.modelExists && dependencies.pythonReady && dependencies.serverAvailable) {
         context.globalState.update('aiGauge.setupComplete', true);
+        
         // Start server if not already running
-        const serverStarted = await ensureInferenceServer(context);
-        if (!serverStarted) {
-            vscode.window.showErrorMessage(
-                'AI-Gauge server failed to start. Please check that the runtime package is properly set up.',
-                'Troubleshoot'
-            ).then(selection => {
-                if (selection === 'Troubleshoot') {
-                    vscode.window.showInformationMessage(
-                        'Troubleshooting Steps:\n\n' +
-                        '1. Ensure runtime package is extracted in current workspace\n' +
-                        '2. Run: ./setup.sh in the runtime package folder\n' +
-                        '3. Check VS Code output panel for detailed error messages\n' +
-                        '4. Verify Ollama is running: ollama list\n' +
-                        '5. Reload VS Code window',
-                        { modal: true }
-                    );
-                }
-            });
-            statusBarItem.text = "$(error) AI-Gauge: Server Error";
-            statusBarItem.tooltip = "Click to troubleshoot server issues";
-            return false;
+        if (!dependencies.serverRunning) {
+            console.log('AI-Gauge: Server not running, starting it now...');
+            const serverStarted = await ensureInferenceServer(context);
+            if (!serverStarted) {
+                vscode.window.showErrorMessage(
+                    'AI-Gauge server failed to start. Please check that the runtime package is properly set up.',
+                    'Troubleshoot'
+                ).then(selection => {
+                    if (selection === 'Troubleshoot') {
+                        vscode.window.showInformationMessage(
+                            'Troubleshooting Steps:\n\n' +
+                            '1. Ensure runtime package is extracted in current workspace\n' +
+                            '2. Run: ./setup.sh in the runtime package folder\n' +
+                            '3. Check VS Code output panel for detailed error messages\n' +
+                            '4. Verify Ollama is running: ollama list\n' +
+                            '5. Reload VS Code window',
+                            { modal: true }
+                        );
+                    }
+                });
+                statusBarItem.text = "$(error) AI-Gauge: Server Error";
+                statusBarItem.tooltip = "Click to troubleshoot server issues";
+                return false;
+            }
+        } else {
+            console.log('AI-Gauge: Server already running');
         }
         statusBarItem.text = "$(check) AI-Gauge: Active";
         statusBarItem.tooltip = "AI-Gauge is analyzing your LLM calls for cost optimization";
