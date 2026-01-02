@@ -4,78 +4,71 @@ Complete setup instructions for end users.
 
 ---
 
-## 🚀 Quick Start (Automatic Setup)
+## 🚀 Quick Start (Recommended)
 
-**Total time: ~5 minutes. Everything handled automatically.**
+**Total time: ~5 minutes**
 
-### Step 1: Install VS Code Extension
+### Step 1: Download Runtime Package
 
-**Option A: Install from Marketplace (Recommended)**
 ```bash
-# In VS Code: Cmd+Shift+P → Search "AI-Gauge" → Install
-# Or visit: https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge
+# Download the latest runtime package
+curl -LO https://github.com/ajayvenki2910/ai-gauge/releases/latest/download/ai-gauge-runtime.tar.gz
+
+# Extract it
+tar -xzf ai-gauge-runtime.tar.gz
+cd runtime
 ```
 
-**Option B: Install from VSIX file**
+### Step 2: Run Setup
+
 ```bash
-# Download ai-gauge-0.4.0.vsix from the project releases
-# Then in VS Code: Cmd+Shift+P → "Extensions: Install from VSIX..."
+./setup.sh
 ```
 
-### Step 2: Enable AI-Gauge
-The extension automatically:
-- ✅ Copies bundled Python code to your local storage
-- ✅ Installs required Python dependencies
-- ✅ Sets up Ollama for agent analysis (if needed)
-- ✅ Starts the inference server
-- ✅ Configures all necessary components
-
-**That's it!** AI-Gauge will now analyze your LLM calls automatically using its agent orchestration pipeline.
-The extension will automatically:
-- ✅ Start the AI-Gauge inference server
+This will automatically:
+- ✅ Create a Python virtual environment
 - ✅ Install required Python dependencies
-- ✅ Set up Ollama (if needed for local AI analysis)
-- ✅ Configure all necessary components
+- ✅ Install Ollama (if not present)
+- ✅ Download the AI-Gauge model
+- ✅ Verify everything works
 
-**That's it!** AI-Gauge will now analyze your LLM calls automatically using its agent orchestration pipeline.
+### Step 3: Install VS Code Extension
 
-**Option C: Build from Source**
+1. Open VS Code
+2. Go to Extensions (Cmd+Shift+X)
+3. Search "AI-Gauge"
+4. Click Install
+
+**That's it!** The extension will automatically detect the runtime package and start analyzing your LLM calls.
+
+---
+
+## Alternative Installation Methods
+
+### Option A: Install Extension First (Auto-Setup)
+
+1. Install AI-Gauge extension from VS Code Marketplace
+2. Open a workspace where you want to use AI-Gauge
+3. The extension will prompt you to set up automatically
+4. Follow the prompts
+
+### Option B: Build from Source
+
 ```bash
-cd ide_plugin
-npm install  # (Requires Node.js 20)
+# Clone the repository
+git clone https://github.com/ajayvenki2910/ai-gauge.git
+cd ai-gauge
+
+# Run setup
+cd runtime
+./setup.sh
+
+# Build extension (optional)
+cd ../ide_plugin
+npm install
 npm run compile
 npx vsce package
-# Then install the generated .vsix file
 ```
-
-### Step 3: Test It!
-
-```bash
-# Install Python dependencies (if not done automatically)
-pip install -r requirements.txt
-
-# Run demo
-python test_samples/demo_single_test.py
-```
-
-**Done!** AI-Gauge will analyze your LLM calls and recommend cost-saving alternatives using its sophisticated agent pipeline.
-
-**Note**: The HuggingFace model is processing (usually 5-30 minutes). For now, AI-Gauge will use the local model and automatically switch to cloud inference when ready.
-
-### Step 4: Test It!
-
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Set API key as env var
-export HF_API_KEY="hf_your_token_here"
-
-# Run demo
-python test_samples/demo_single_test.py
-```
-
-**Done!** AI-Gauge will analyze your LLM calls and recommend cost-saving alternatives.
 
 ---
 
@@ -83,7 +76,7 @@ python test_samples/demo_single_test.py
 
 - **Python 3.9+** with pip
 - **VS Code** (for the extension)
-- **Ollama** (automatically managed by the extension for local AI analysis)
+- **macOS or Linux** (Windows support coming soon)
 
 ---
 
@@ -94,10 +87,9 @@ python test_samples/demo_single_test.py
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `aiGauge.enabled` | `true` | Enable/disable analysis |
-| `aiGauge.modelServerUrl` | `http://localhost:8080` | Inference server URL (managed automatically) |
+| `aiGauge.modelServerUrl` | `http://localhost:8080` | Inference server URL |
 | `aiGauge.showInlineHints` | `true` | Show inline cost hints |
 | `aiGauge.costThreshold` | `20` | Minimum savings % to show hint |
-| `aiGauge.serverAutoStart` | `true` | Automatically start inference server |
 | `aiGauge.serverHealthCheckInterval` | `30` | Health check interval (seconds) |
 
 ### Environment Variables

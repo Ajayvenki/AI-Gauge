@@ -57,14 +57,24 @@ AI-Gauge is a sophisticated system for optimizing LLM API costs through intellig
 
 ### Inference Server (Python/Flask)
 
-**Location**: `src/inference_server.py`
+**Location**: `runtime/inference_server.py` (distributable) / `src/inference_server.py` (development)
 **Purpose**: REST API endpoint for extension communication
 
 **Key Features**:
-- Flask-based REST API (`/analyze`, `/health`)
-- Decision module integration
+- Flask-based REST API
 - CORS support for VS Code extension
 - Error handling and logging
+
+**Endpoints**:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Server health check with backend status |
+| `/analyze` | POST | Analyze LLM call and return recommendations |
+| `/models` | GET | List all available models |
+| `/models/<id>` | GET | Get detailed model information |
+| `/models/<id>/cost` | GET | Get cost information for a model |
+| `/models/<id>/alternatives` | GET | Get cheaper alternative models |
+| `/models/<id>/tier` | GET | Get tier classification |
 
 ### Decision Module - Agent Orchestration (Python)
 

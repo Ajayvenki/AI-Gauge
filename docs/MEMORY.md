@@ -4,7 +4,64 @@
 
 ---
 
-## 📌 Latest Update (January 2, 2026 - v0.4.4 Release)
+## 📌 Latest Update (January 2, 2026 - v0.5.5 Release)
+
+### CRITICAL BUG FIX: Duplicate Flask Endpoint ✅ COMPLETE
+
+**Problem Solved**: Server was crashing with `AssertionError: View function mapping is overwriting an existing endpoint function: get_model_cost`
+
+#### Root Cause
+Two identical Flask route definitions for `/models/<model_id>/cost` existed in `inference_server.py`:
+- First at lines 208-222 (correct version)
+- Second at lines 273-286 (duplicate causing crash)
+
+#### What Changed
+- **runtime/inference_server.py**: Removed duplicate `get_model_cost` endpoint
+- **src/inference_server.py**: Synced with runtime version, fixed same duplicate issue  
+- **README.md**: Updated download URLs to use GitHub's `/latest/` pattern for automatic version resolution
+- **ide_plugin/package.json**: Bumped version to 0.5.5
+
+#### Validation Performed
+- ✅ No duplicate Flask routes (verified with grep)
+- ✅ No duplicate function definitions
+- ✅ TypeScript compiles without errors
+- ✅ Python files compile successfully
+- ✅ Extension published to VS Code Marketplace
+
+#### Files Modified
+| File | Change |
+|------|--------|
+| `runtime/inference_server.py` | Removed duplicate `/cost` endpoint |
+| `src/inference_server.py` | Updated to match runtime version |
+| `README.md` | Updated download instructions |
+| `ide_plugin/package.json` | Version 0.5.5 |
+
+#### Project Structure Clarification
+- **`src/`**: Development code (uses `src.module` imports)
+- **`runtime/`**: Distributable package (flat imports for standalone operation)
+- **`setup.sh`**: Only exists in `runtime/` - users run this after extracting tarball
+
+---
+
+## 📌 Previous Update (January 2, 2026 - v0.5.4 Release)
+
+### Cost Display and Endpoint Fixes ✅ COMPLETE
+
+**Problems Solved**:
+1. Cost showing $0.00 instead of actual model costs
+2. 404 errors for `/models/<model_id>/cost` endpoint
+3. Provider showing "unknown" despite being in response
+4. CO2 estimates using hardcoded values
+
+#### What Changed
+- Added `/models/<model_id>/cost` endpoint to inference server
+- Fixed response parsing to handle camelCase server responses
+- Updated cost and CO2 calculations with proper fallbacks
+- Improved provider detection and display
+
+---
+
+## 📌 Previous Update (January 2, 2026 - v0.4.4 Release)
 
 ### Extension Package Optimization ✅ COMPLETE
 
