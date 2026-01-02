@@ -151,6 +151,20 @@ AI-Gauge serves as an intelligent AI alternative for optimizing LLM usage. To ma
 
 For detailed technical docs, see [Architecture Guide](docs/ARCHITECTURE.md).
 
+### Production Considerations
+
+Due to cost limitations, several shortcuts were chosen to prove the working prototype. For instance, hosting the inference server on the user's machine enables the plugin but may not scale well. SLM integration via Ollama provides local execution, yet it could be optimized further.
+
+For production-ready use cases, consider these alternatives:
+- **Model Inference**: Replace Ollama with a vLLM inference endpoint or cloud-hosted solutions like AWS SageMaker for better scalability and performance.
+- **Server Hosting**: Transition from local user-machine hosting to Kubernetes (k8s) clusters or platforms like AgentCore for robust, distributed deployment.
+- **Security & Privacy**: Implement enterprise-grade security with OAuth authentication, data encryption, and compliance standards (e.g., GDPR, HIPAA).
+- **Scalability & Monitoring**: Add load balancing, auto-scaling, and monitoring with tools like Prometheus and Grafana for real-time insights.
+- **Deployment & CI/CD**: Use containerization (Docker) and automated pipelines for seamless updates and rollbacks.
+- **Overall Architecture**: These changes would enhance reliability, security, and efficiency, aligning with enterprise-grade standards.
+
+This approach demonstrates a well-planned architecture, balancing prototype feasibility with future scalability.
+
 ## Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
