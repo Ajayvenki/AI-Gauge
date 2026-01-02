@@ -5,6 +5,18 @@ All notable changes to AI-Gauge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2025-01-02
+
+### Fixed
+- **Repository Detection**: Extension now correctly detects full AI-Gauge repositories with runtime files in `runtime/` subdirectory
+- **Workspace Priority**: Fixed logic to properly prioritize current workspace over common locations
+- **Full Repository Support**: Added support for users who clone the complete repository instead of just runtime packages
+
+### Technical
+- **Enhanced `isRuntimePackage()`**: Now checks both runtime package structure (files in root) and full repository structure (files in `runtime/` subdirectory)
+- **Updated `isValidRepo()`**: Added detection for full repository structure with runtime subdirectory
+- **Detection Priority**: Workspace runtime packages > Workspace full repos > Common location runtime packages > Common location full repos
+
 ## [0.4.5] - 2025-01-02
 
 ### Added

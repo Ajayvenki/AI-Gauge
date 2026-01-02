@@ -22,19 +22,45 @@ In today's fast-paced development environment, AI API costs can spiral out of co
 - **Privacy-First**: All analysis occurs locally on your machine.
 - **Continuous Batching**: Unlike traditional batching, which forces all requests in a group to finish before the next group starts—leaving the GPU idle—continuous batching allows new requests to be inserted immediately as previous ones complete, maximizing efficiency.
 
-## Alternatives and Approaches
-
-When needed, AI-Gauge supports:
-- Web search for additional context.
-- Software engineering and procedural approaches for complex tasks.
-- Efficient resource usage with single-call requests that gather all necessary information at once.
-
 ## How It Works
 
 1. **Intercept**: Captures LLM API calls in real-time during coding.
 2. **Analyze**: Assesses task complexity and requirements using local AI.
 3. **Recommend**: Suggests the most efficient model with cost and carbon estimates.
 4. **Execute**: Allows you to proceed with the recommendation.
+
+## Our AI Model: 
+
+AI-Gauge's recommendations are powered by a fine-tuned Small Language Model (SLM) running locally via Ollama, ensuring privacy and efficiency.
+
+### Why Phi-3.5?
+
+We chose Microsoft's Phi-3.5 as our base model because:
+- **Efficiency**: Lightweight and fast for real-time analysis without heavy resource demands.
+- **Reasoning Capabilities**: Strong performance in task complexity assessment and model selection.
+- **Privacy**: Local execution keeps all data secure on your machine.
+- **Mission Alignment**: A cost-effective model for analysis avoids the paradox of high expenses to cut costs.
+
+While larger LLMs offer broad capabilities, they are resource-intensive and may overkill for real-time analysis. The base Phi-3 model lacks domain-specific knowledge for accurate task complexity assessment. Fine-tuning on our dataset equips it with the precision needed for reliable recommendations.
+
+### Training with 1000+ Samples
+
+Fine-tuning on over 1000 labeled examples provides:
+- **Comprehensive Coverage**: Diverse LLM tasks from trivial corrections to expert-level code generation.
+- **Accuracy**: Precise complexity classification and reliable recommendations.
+- **Generalization**: Robust handling of varied and edge-case scenarios.
+
+### Fine-Tuning Details
+
+- **Method**: LoRA (Low-Rank Adaptation) for parameter-efficient fine-tuning.
+- **Hyperparameters**:
+  - Learning Rate: 2e-5
+  - Batch Size: 4
+  - Epochs: 3
+  - LoRA Rank: 16
+  - LoRA Alpha: 32
+
+This trained SLM enables AI-Gauge to deliver the intelligent insights behind our 60-70% cost savings.
 
 ## Project Showcase
 
@@ -45,6 +71,13 @@ During development, AI-Gauge itself demonstrated significant savings. By applyin
 - **After**: $4,500/month (70% savings)
 - **Performance**: 98% task success rate maintained
 - **Carbon**: 12 tons CO₂ equivalent saved annually
+
+## Best Practices and Recommendations
+
+To maximize efficiency with AI-Gauge:
+- Use web search for additional context when needed.
+- Employ software engineering and procedural approaches for complex tasks.
+- Optimize resource usage by making single-call requests that gather all necessary information at once.
 
 ## Quick Start
 

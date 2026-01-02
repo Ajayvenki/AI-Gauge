@@ -104,9 +104,22 @@ function detectRepoPath(): string | undefined {
 function isRuntimePackage(repoPath: string): boolean {
     try {
         const fs = require('fs');
+
+        // Check for runtime package structure (files directly in root)
         const serverPath = path.join(repoPath, 'inference_server.py');
         const requirementsPath = path.join(repoPath, 'requirements.txt');
-        return fs.existsSync(serverPath) && fs.existsSync(requirementsPath);
+        if (fs.existsSync(serverPath) && fs.existsSync(requirementsPath)) {
+            return true;
+        }
+
+        // Check for full repository structure (files in runtime/ subdirectory)
+        const runtimeServerPath = path.join(repoPath, 'runtime', 'inference_server.py');
+        const runtimeRequirementsPath = path.join(repoPath, 'runtime', 'requirements.txt');
+        if (fs.existsSync(runtimeServerPath) && fs.existsSync(runtimeRequirementsPath)) {
+            return true;
+        }
+
+        return false;
     } catch {
         return false;
     }
@@ -119,10 +132,17 @@ function isValidRepo(repoPath: string): boolean {
     try {
         const fs = require('fs');
 
-        // Check for runtime package structure (v0.4.3+)
+        // Check for runtime package structure (files directly in root)
         const runtimeServerPath = path.join(repoPath, 'inference_server.py');
         const runtimeRequirementsPath = path.join(repoPath, 'requirements.txt');
         if (fs.existsSync(runtimeServerPath) && fs.existsSync(runtimeRequirementsPath)) {
+            return true;
+        }
+
+        // Check for full repository structure (files in runtime/ subdirectory)
+        const fullRepoServerPath = path.join(repoPath, 'runtime', 'inference_server.py');
+        const fullRepoRequirementsPath = path.join(repoPath, 'runtime', 'requirements.txt');
+        if (fs.existsSync(fullRepoServerPath) && fs.existsSync(fullRepoRequirementsPath)) {
             return true;
         }
 
