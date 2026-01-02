@@ -23,10 +23,13 @@ class AIGaugeClient {
     async analyze(call) {
         try {
             // Priority: Ollama (local) > Server
+            console.log('AI-Gauge: Analyzing call with config:', this.config);
             if (this.config.useOllamaDirect) {
+                console.log('AI-Gauge: Using Ollama direct analysis');
                 return await this.analyzeWithOllama(call);
             }
             else {
+                console.log('AI-Gauge: Using inference server analysis');
                 return await this.analyzeWithServer(call);
             }
         }
@@ -56,6 +59,7 @@ class AIGaugeClient {
      */
     async analyzeWithOllama(call) {
         const prompt = this.buildOllamaPrompt(call);
+        console.log('AI-Gauge: Ollama prompt:', prompt);
         const response = await fetch(`${this.config.ollamaUrl}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -73,41 +77,75 @@ class AIGaugeClient {
             throw new Error(`Ollama returned ${response.status}`);
         }
         const result = await response.json();
+        console.log('AI-Gauge: Ollama response:', result.response);
         return this.parseOllamaResponse(result.response, call);
     }
     /**
      * Build prompt for direct Ollama analysis
      */
     buildOllamaPrompt(call) {
-        return `Analyze this LLM API call and determine if the model choice is appropriate:
+        return `You are an AI model analyzer. Analyze this LLM API call and determine if the model choice is appropriate.
 
-Model: ${call.modelId}
-Provider: ${call.provider}
-Has Tools: ${call.hasTools}
-Tool Count: ${call.toolCount}
-Has Structured Output: ${call.hasStructuredOutput}
-Code Context: ${call.surroundingCode.substring(0, 500)}
+TASK TO ANALYZE: ${call.surroundingCode}
 
-Return a JSON object with:
-- is_model_appropriate: true/false
-- minimum_capable_tier: one of [budget, standard, premium, frontier]
-- actual_complexity: one of [trivial, simple, moderate, complex, expert]
-- appropriateness_reasoning: brief explanation`;
+MODEL BEING USED: ${call.modelId} (${call.provider})
+
+INSTRUCTIONS:
+- Read the actual task in the code above
+- Determine if the model is appropriate for THIS SPECIFIC TASK
+- Do NOT copy example responses
+- Analyze the real complexity of the task described
+
+Respond with ONLY a JSON object in this exact format:
+{
+  "is_model_appropriate": true_or_false_based_on_actual_task,
+  "minimum_capable_tier": "budget|standard|premium|frontier",
+  "actual_complexity": "trivial|simple|moderate|complex|expert", 
+  "appropriateness_reasoning": "Your analysis of this specific task"
+}`;
     }
     /**
      * Parse Ollama's raw response
      */
     parseOllamaResponse(responseText, call) {
+        console.log('AI-Gauge: Parsing Ollama response:', responseText);
         let analysis = {};
         // Try to extract JSON from response
         try {
-            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            const jsonMatch = responseText.match(/\{[\s\S]*?\}/);
             if (jsonMatch) {
-                analysis = JSON.parse(jsonMatch[0]);
+                const cleanJson = jsonMatch[0]
+                    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+                    .replace(/,(\s*[}\]])/g, '$1'); // Remove trailing commas
+                analysis = JSON.parse(cleanJson);
+                console.log('AI-Gauge: Parsed analysis:', analysis);
             }
         }
-        catch {
-            // Fall back to defaults
+        catch (e) {
+            console.log('AI-Gauge: JSON parse failed, trying keyword analysis:', e);
+        }
+        // Keyword-based fallback if JSON parsing failed
+        if (!analysis.is_model_appropriate && analysis.is_model_appropriate !== false) {
+            console.log('AI-Gauge: Using keyword-based analysis');
+            const lowerResponse = responseText.toLowerCase();
+            // Check for overkill indicators
+            const overkillKeywords = ['overkill', 'too powerful', 'unnecessary', 'waste', 'expensive', 'simpler model', 'cheaper'];
+            const appropriateKeywords = ['appropriate', 'suitable', 'necessary', 'complex', 'advanced'];
+            const hasOverkill = overkillKeywords.some(k => lowerResponse.includes(k));
+            const hasAppropriate = appropriateKeywords.some(k => lowerResponse.includes(k));
+            if (hasOverkill && !hasAppropriate) {
+                analysis.is_model_appropriate = false;
+                analysis.appropriateness_reasoning = 'Keyword analysis detected overkill';
+            }
+            else if (hasAppropriate || lowerResponse.includes('appropriate')) {
+                analysis.is_model_appropriate = true;
+                analysis.appropriateness_reasoning = 'Keyword analysis detected appropriate';
+            }
+            else {
+                // Default to overkill for frontier models if unclear
+                analysis.is_model_appropriate = !this.isLikelyOverkill(call);
+                analysis.appropriateness_reasoning = 'Default analysis based on model tier';
+            }
         }
         const isAppropriate = analysis.is_model_appropriate !== false;
         return {
@@ -127,7 +165,7 @@ Return a JSON object with:
             } : null,
             costSavingsPercent: !isAppropriate ? 80 : 0,
             latencySavingsMs: !isAppropriate ? 500 : 0,
-            reasoning: analysis.appropriateness_reasoning || 'Analysis complete',
+            reasoning: analysis.appropriateness_reasoning || (isAppropriate ? 'Model appears appropriate for this task' : 'Model may be overkill for this task'),
             lineNumber: call.lineNumber,
             rawCode: call.rawCallCode
         };
