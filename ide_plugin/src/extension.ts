@@ -824,9 +824,24 @@ function debounce<T extends (...args: unknown[]) => unknown>(func: T, wait: numb
 async function checkServerAvailable(context: vscode.ExtensionContext): Promise<boolean> {
     try {
         if (!repoPath) return false;
-        const serverPath = path.join(repoPath, 'src', 'inference_server.py');
         const fs = require('fs');
-        return fs.existsSync(serverPath);
+
+        // Check all possible locations for inference_server.py
+        const possiblePaths = [
+            path.join(repoPath, 'inference_server.py'),           // Root (flat runtime package)
+            path.join(repoPath, 'runtime', 'inference_server.py'), // runtime/ subdirectory
+            path.join(repoPath, 'src', 'inference_server.py'),     // src/ (dev repo)
+        ];
+
+        for (const serverPath of possiblePaths) {
+            if (fs.existsSync(serverPath)) {
+                console.log('AI-Gauge: Server found at:', serverPath);
+                return true;
+            }
+        }
+
+        console.log('AI-Gauge: Server not found in any expected location');
+        return false;
     } catch (error) {
         console.log('AI-Gauge: Server availability check failed:', error);
         return false;
