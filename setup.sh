@@ -130,7 +130,7 @@ main() {
     fi
     
     # Check if model already exists
-    if ollama list 2>/dev/null | grep -q "ai-gauge"; then
+    if ollama list 2>/dev/null | grep -q "ajayvenki01/ai-gauge"; then
         echo -e "${GREEN}✓${NC} ai-gauge model already exists"
     else
         echo "Pulling ai-gauge model from Ollama registry..."
@@ -144,7 +144,7 @@ main() {
     echo "=============================================="
     
     echo "Testing model..."
-    RESPONSE=$(ollama run ai-gauge "Return JSON: {\"status\": \"ok\"}" 2>/dev/null | head -1)
+    RESPONSE=$(ollama run ajayvenki01/ai-gauge "Return JSON: {\"status\": \"ok\"}" 2>/dev/null)
     if echo "$RESPONSE" | grep -q "status"; then
         echo -e "${GREEN}✓${NC} Model is working"
     else
