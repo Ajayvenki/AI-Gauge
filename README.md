@@ -1,4 +1,4 @@
-# AI-Gauge: Your AI Cost Meter
+# AI-Gauge: Your AI Cost & carbon Meter
 
 > *"You can't optimize what you don't measure."* — AI-Gauge measures your AI costs **before** they happen.
 
