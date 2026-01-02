@@ -84,20 +84,29 @@ To maximize efficiency with AI-Gauge:
 1. **Download Runtime Package**:
    ```bash
    # Download and extract the runtime package
-   wget https://github.com/ajayvenki2910/ai-gauge/releases/download/v0.4.3/ai-gauge-runtime-v0.4.3.tar.gz
-   tar -xzf ai-gauge-runtime-v0.4.3.tar.gz
-   cd ai-gauge-runtime-v0.4.3
+   wget https://github.com/ajayvenki2910/ai-gauge/releases/download/v0.5.0/ai-gauge-runtime-v0.5.0.tar.gz
+   tar -xzf ai-gauge-runtime-v0.5.0.tar.gz
+   cd ai-gauge-runtime
    ```
 
-2. **Run Setup**:
+2. **Run Setup** (from inside the runtime folder):
    ```bash
    ./setup.sh
    ```
-   This installs Ollama, downloads the AI model, and sets up dependencies.
+   This will:
+   - Create a Python virtual environment
+   - Install Python dependencies
+   - Install Ollama (if not present)
+   - Download the AI-Gauge model
 
-3. **Install Extension**: Search "AI-Gauge" in VS Code Marketplace
+3. **Open VS Code**: Open VS Code in the folder containing the runtime package
 
-4. **Code**: Start coding - get automatic LLM analysis and recommendations!
+4. **Install Extension**: Search "AI-Gauge" in VS Code Marketplace and install
+
+5. **Code**: Start coding - the extension will automatically:
+   - Detect the runtime package
+   - Start the inference server
+   - Analyze your LLM API calls!
 
 ## Architecture & Technical Details
 

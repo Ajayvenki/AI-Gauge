@@ -72,8 +72,22 @@ main() {
     
     echo ""
     echo "=============================================="
-    echo "Step 1: Python Dependencies"
+    echo "Step 1: Python Virtual Environment"
     echo "=============================================="
+    
+    # Create virtual environment if it doesn't exist
+    if [ ! -d "venv" ]; then
+        echo "Creating Python virtual environment..."
+        python3 -m venv venv
+        echo -e "${GREEN}✓${NC} Virtual environment created"
+    else
+        echo -e "${GREEN}✓${NC} Virtual environment already exists"
+    fi
+    
+    # Activate virtual environment
+    echo "Activating virtual environment..."
+    source venv/bin/activate
+    echo -e "${GREEN}✓${NC} Virtual environment activated"
     
     if [ -f "requirements.txt" ]; then
         echo "Installing Python packages..."
@@ -158,14 +172,12 @@ main() {
     echo ""
     echo "Next steps:"
     echo ""
-    echo "  1. Run a demo:"
-    echo "     python test_samples/demo_single_test.py"
+    echo "  1. Open VS Code in this folder"
+    echo "  2. Install AI-Gauge extension from marketplace"
+    echo "  3. Start coding - the extension will auto-detect this setup!"
     echo ""
-    echo "  2. Start the inference server:"
-    echo "     python inference_server.py"
-    echo ""
-    echo "  3. (Optional) Build VS Code extension:"
-    echo "     cd ide_plugin && npm install && npm run compile"
+    echo "Note: The virtual environment is at: $(pwd)/venv"
+    echo "      The extension will automatically use it."
     echo ""
 }
 
