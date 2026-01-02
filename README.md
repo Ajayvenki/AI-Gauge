@@ -83,10 +83,12 @@ To maximize efficiency with AI-Gauge:
 
 1. **Download Runtime Package**:
    ```bash
-   # Download and extract the runtime package
-   wget https://github.com/ajayvenki2910/ai-gauge/releases/download/v0.5.0/ai-gauge-runtime-v0.5.0.tar.gz
-   tar -xzf ai-gauge-runtime-v0.5.0.tar.gz
-   cd ai-gauge-runtime
+   # Download the latest runtime package from GitHub releases
+   # Visit: https://github.com/ajayvenki2910/ai-gauge/releases/latest
+   # Or use curl:
+   curl -LO https://github.com/ajayvenki2910/ai-gauge/releases/latest/download/ai-gauge-runtime.tar.gz
+   tar -xzf ai-gauge-runtime.tar.gz
+   cd runtime
    ```
 
 2. **Run Setup** (from inside the runtime folder):

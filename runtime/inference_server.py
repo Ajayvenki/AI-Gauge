@@ -278,22 +278,6 @@ def get_model_tier(model_id: str):
     })
 
 
-@app.route('/models/<model_id>/cost', methods=['GET'])
-def get_model_cost(model_id: str):
-    """Get cost information for a model."""
-    card = get_model_card(model_id)
-    if not card:
-        return jsonify({'error': f'Model {model_id} not found'}), 404
-    
-    return jsonify({
-        'model_id': card.model_id,
-        'input_cost_per_1m': card.input_cost_per_1m,
-        'output_cost_per_1m': card.output_cost_per_1m,
-        'total_cost_per_1m': card.input_cost_per_1m + card.output_cost_per_1m,
-        'estimated_cost_per_1k': (card.input_cost_per_1m + card.output_cost_per_1m) / 1000
-    })
-
-
 if __name__ == '__main__':
     model_info = get_local_model_info()
     
