@@ -5,6 +5,20 @@ All notable changes to AI-Gauge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2025-01-02
+
+### Added
+- **Package Optimization**: Added .vscodeignore to exclude development files from extension package
+- **Runtime Package Detection**: Extension now properly detects runtime packages in any workspace location
+
+### Changed
+- **Extension Size**: Reduced from 33KB to 21KB (37% smaller) by excluding .d.ts and .js.map files
+- **Packaging Strategy**: Switched to .vscodeignore for cleaner file inclusion/exclusion
+
+### Fixed
+- **Repository Detection**: Fixed extension failing to find runtime packages in new workspaces
+- **Server Path Resolution**: Corrected inference server startup path for runtime package structure
+
 ## [0.4.3] - 2025-01-02
 
 ### Added
