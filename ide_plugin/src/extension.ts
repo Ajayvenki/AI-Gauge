@@ -900,28 +900,69 @@ async function startInferenceServer(context: vscode.ExtensionContext): Promise<b
                 return;
             }
 
-            // Find Python executable
-            const pythonCmd = process.platform === 'win32' ? 'python' : 'python';
+            const fs = require('fs');
 
-            // Get the path to the inference server (check runtime package first, then dev repo)
+            // Determine the actual runtime directory and server path
+            let runtimeDir: string;
             let serverPath: string;
-            const runtimeServerPath = path.join(repoPath, 'inference_server.py');
+
+            // Check for server in root (flat runtime package)
+            const rootServerPath = path.join(repoPath, 'inference_server.py');
+            // Check for server in runtime/ subdirectory (cloned repo or organized structure)
+            const subfolderServerPath = path.join(repoPath, 'runtime', 'inference_server.py');
+            // Check for server in src/ subdirectory (development repo)
             const devServerPath = path.join(repoPath, 'src', 'inference_server.py');
 
-            if (require('fs').existsSync(runtimeServerPath)) {
-                serverPath = runtimeServerPath;
-            } else if (require('fs').existsSync(devServerPath)) {
+            if (fs.existsSync(rootServerPath)) {
+                runtimeDir = repoPath;
+                serverPath = rootServerPath;
+                console.log('AI-Gauge: Found server in root:', serverPath);
+            } else if (fs.existsSync(subfolderServerPath)) {
+                runtimeDir = path.join(repoPath, 'runtime');
+                serverPath = subfolderServerPath;
+                console.log('AI-Gauge: Found server in runtime/ subdirectory:', serverPath);
+            } else if (fs.existsSync(devServerPath)) {
+                runtimeDir = path.join(repoPath, 'src');
                 serverPath = devServerPath;
+                console.log('AI-Gauge: Found server in src/ (dev mode):', serverPath);
             } else {
                 console.error('AI-Gauge: Could not find inference_server.py in repository');
                 resolve(false);
                 return;
             }
 
+            // Find Python executable - prefer venv if available
+            let pythonCmd: string = process.platform === 'win32' ? 'python' : 'python3';  // Default fallback
+            
+            // Check for venv in multiple locations (workspace root, runtime dir, parent dir)
+            const venvLocations = [
+                path.join(repoPath, 'venv', 'bin', 'python'),           // workspace/venv
+                path.join(repoPath, 'venv', 'Scripts', 'python.exe'),  // Windows
+                path.join(runtimeDir, 'venv', 'bin', 'python'),        // runtime/venv
+                path.join(runtimeDir, 'venv', 'Scripts', 'python.exe'), // Windows
+                path.join(repoPath, '.venv', 'bin', 'python'),         // workspace/.venv
+                path.join(repoPath, '.venv', 'Scripts', 'python.exe'), // Windows
+            ];
+
+            let foundVenv = false;
+            for (const venvPath of venvLocations) {
+                if (fs.existsSync(venvPath)) {
+                    pythonCmd = venvPath;
+                    foundVenv = true;
+                    console.log('AI-Gauge: Using venv Python:', pythonCmd);
+                    break;
+                }
+            }
+
+            if (!foundVenv) {
+                console.log('AI-Gauge: No venv found, using system Python:', pythonCmd);
+            }
+
             console.log('AI-Gauge: Starting inference server:', pythonCmd, serverPath);
+            console.log('AI-Gauge: Working directory:', runtimeDir);
 
             inferenceServerProcess = cp.spawn(pythonCmd, [serverPath], {
-                cwd: repoPath,
+                cwd: runtimeDir,
                 stdio: ['ignore', 'pipe', 'pipe'],
                 detached: false
             });

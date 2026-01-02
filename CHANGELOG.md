@@ -5,6 +5,26 @@ All notable changes to AI-Gauge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2025-01-02
+
+### Fixed
+- **Virtual Environment Support**: Extension now automatically detects and uses venv/Python instead of system Python
+- **Server Path Resolution**: Correctly finds inference_server.py in runtime/, src/, or root directories
+- **Working Directory**: Server now runs from correct directory (runtime dir, not repo root)
+
+### Technical
+- **Smart Python Detection**: Checks multiple venv locations: `workspace/venv`, `runtime/venv`, `workspace/.venv`
+- **Cross-Platform Support**: Handles both Unix (`bin/python`) and Windows (`Scripts/python.exe`) venv paths
+- **Runtime Directory Resolution**: Correctly determines `runtimeDir` based on where `inference_server.py` is found
+- **Fallback to python3**: Uses `python3` instead of `python` on Unix systems when no venv found
+
+### Server Startup Flow
+1. Detect inference_server.py location (root, runtime/, or src/)
+2. Set runtimeDir to the actual directory containing the server
+3. Search for venv Python in workspace root and runtimeDir
+4. Use venv Python if found, otherwise fall back to system python3
+5. Start server with correct working directory
+
 ## [0.4.7] - 2025-01-02
 
 ### Fixed
