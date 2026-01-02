@@ -95,11 +95,18 @@ function detectRepoPath() {
     return undefined;
 }
 /**
- * Check if path contains valid AI-Gauge repository
+ * Check if path contains valid AI-Gauge repository or runtime package
  */
 function isValidRepo(repoPath) {
     try {
         const fs = require('fs');
+        // Check for runtime package structure (v0.4.3+)
+        const runtimeServerPath = path.join(repoPath, 'inference_server.py');
+        const runtimeRequirementsPath = path.join(repoPath, 'requirements.txt');
+        if (fs.existsSync(runtimeServerPath) && fs.existsSync(runtimeRequirementsPath)) {
+            return true;
+        }
+        // Check for development repository structure (legacy)
         const serverPath = path.join(repoPath, 'src', 'inference_server.py');
         const requirementsPath = path.join(repoPath, 'requirements.txt');
         return fs.existsSync(serverPath) && fs.existsSync(requirementsPath);
@@ -671,8 +678,21 @@ async function startInferenceServer(context) {
             }
             // Find Python executable
             const pythonCmd = process.platform === 'win32' ? 'python' : 'python';
-            // Get the path to the inference server in repository
-            const serverPath = path.join(repoPath, 'src', 'inference_server.py');
+            // Get the path to the inference server (check runtime package first, then dev repo)
+            let serverPath;
+            const runtimeServerPath = path.join(repoPath, 'inference_server.py');
+            const devServerPath = path.join(repoPath, 'src', 'inference_server.py');
+            if (require('fs').existsSync(runtimeServerPath)) {
+                serverPath = runtimeServerPath;
+            }
+            else if (require('fs').existsSync(devServerPath)) {
+                serverPath = devServerPath;
+            }
+            else {
+                console.error('AI-Gauge: Could not find inference_server.py in repository');
+                resolve(false);
+                return;
+            }
             console.log('AI-Gauge: Starting inference server:', pythonCmd, serverPath);
             inferenceServerProcess = cp.spawn(pythonCmd, [serverPath], {
                 cwd: repoPath,
