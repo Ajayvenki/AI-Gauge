@@ -22,9 +22,9 @@ load_dotenv()
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from decision_module import analyze_llm_call
-from model_cards import get_model_card, MODEL_CARDS
-from local_inference import get_model_info
+from src.decision_module import analyze_llm_call
+from src.model_cards import get_model_card, MODEL_CARDS, TIER_RANKINGS
+from src.local_inference import get_model_info as get_local_model_info
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for VS Code extension
@@ -170,25 +170,105 @@ def list_models():
     return jsonify({'models': models, 'count': len(models)})
 
 
-@app.route('/models/<tier>', methods=['GET'])
-def list_models_by_tier(tier: str):
-    """List all models in a specific tier."""
-    models = [
-        {
-            'model_id': card.model_id,
-            'display_name': card.display_name,
-            'provider': card.provider,
-            'input_cost': card.input_cost_per_1m,
-            'output_cost': card.output_cost_per_1m
-        }
-        for card in MODEL_CARDS
-        if card.tier == tier and card.status == 'stable'
-    ]
-    return jsonify({'tier': tier, 'models': models, 'count': len(models)})
+@app.route('/models/<model_id>', methods=['GET'])
+def get_model_info(model_id: str):
+    """Get detailed information for a specific model."""
+    card = get_model_card(model_id)
+    if not card:
+        return jsonify({'error': f'Model {model_id} not found'}), 404
+    
+    return jsonify({
+        'model_id': card.model_id,
+        'display_name': card.display_name,
+        'provider': card.provider,
+        'tier': card.tier,
+        'input_cost_per_1m': card.input_cost_per_1m,
+        'output_cost_per_1m': card.output_cost_per_1m,
+        'carbon_factor': card.carbon_factor,
+        'latency_tier': card.latency_tier,
+        'context_window': card.context_window,
+        'max_output_tokens': card.max_output_tokens,
+        'supports_vision': card.supports_vision,
+        'supports_function_calling': card.supports_function_calling,
+        'supports_structured_output': card.supports_structured_output,
+        'status': card.status
+    })
+
+
+@app.route('/models/<model_id>/alternatives', methods=['GET'])
+def get_model_alternatives(model_id: str):
+    """Get cheaper alternative models for a given model."""
+    card = get_model_card(model_id)
+    if not card:
+        return jsonify({'error': f'Model {model_id} not found'}), 404
+    
+    # Get models from lower tiers that are cheaper
+    alternatives = []
+    current_tier_rank = TIER_RANKINGS.get(card.tier.lower(), 2)
+    
+    for alt_card in MODEL_CARDS:
+        if alt_card.status != 'stable':
+            continue
+            
+        alt_tier_rank = TIER_RANKINGS.get(alt_card.tier.lower(), 2)
+        alt_total_cost = alt_card.input_cost_per_1m + alt_card.output_cost_per_1m
+        current_total_cost = card.input_cost_per_1m + card.output_cost_per_1m
+        
+        # Only suggest cheaper models from same or lower tiers
+        if alt_tier_rank <= current_tier_rank and alt_total_cost < current_total_cost:
+            alternatives.append({
+                'model_id': alt_card.model_id,
+                'display_name': alt_card.display_name,
+                'provider': alt_card.provider,
+                'tier': alt_card.tier,
+                'input_cost_per_1m': alt_card.input_cost_per_1m,
+                'output_cost_per_1m': alt_card.output_cost_per_1m,
+                'latency_tier': alt_card.latency_tier,
+                'carbon_factor': alt_card.carbon_factor,
+                'cost_savings_percent': ((current_total_cost - alt_total_cost) / current_total_cost * 100) if current_total_cost > 0 else 0
+            })
+    
+    # Sort by cost savings (highest first)
+    alternatives.sort(key=lambda x: x['cost_savings_percent'], reverse=True)
+    
+    return jsonify({
+        'current_model': model_id,
+        'alternatives': alternatives[:5]  # Top 5 alternatives
+    })
+
+
+@app.route('/models/<model_id>/tier', methods=['GET'])
+def get_model_tier(model_id: str):
+    """Get the tier classification for a model."""
+    card = get_model_card(model_id)
+    if not card:
+        return jsonify({'error': f'Model {model_id} not found'}), 404
+    
+    return jsonify({
+        'model_id': card.model_id,
+        'tier': card.tier,
+        'tier_rank': TIER_RANKINGS.get(card.tier.lower(), 2)
+    })
+
+
+@app.route('/models/<model_id>/cost', methods=['GET'])
+def get_model_cost(model_id: str):
+    """Get cost information for a model."""
+    card = get_model_card(model_id)
+    if not card:
+        return jsonify({'error': f'Model {model_id} not found'}), 404
+    
+    return jsonify({
+        'model_id': card.model_id,
+        'input_cost_per_1m': card.input_cost_per_1m,
+        'output_cost_per_1m': card.output_cost_per_1m,
+        'total_cost_per_1m': card.input_cost_per_1m + card.output_cost_per_1m,
+        'estimated_cost_per_1k': (card.input_cost_per_1m + card.output_cost_per_1m) / 1000
+    })
 
 
 if __name__ == '__main__':
-    model_info = get_model_info()
+    model_info = get_local_model_info()
     
     print("=" * 60)
     print("🌱 AI-GAUGE INFERENCE SERVER")

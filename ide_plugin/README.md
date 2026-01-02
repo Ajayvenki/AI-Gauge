@@ -1,6 +1,6 @@
 # AI-Gauge VS Code Extension
 
-Analyzes LLM API calls in your code and suggests cheaper model alternatives.
+Analyzes LLM API calls in your code and suggests cheaper model alternatives using agent orchestration.
 
 ## 🚀 Quick Start (2 Minutes)
 
@@ -11,8 +11,10 @@ Ctrl+Shift+X → Search "AI-Gauge" → Install → Reload VS Code
 
 ### 2. That's it! ✨
 AI-Gauge automatically:
-- ✅ Installs Ollama (if missing)
-- ✅ Downloads the AI-Gauge analysis model
+- ✅ Copies bundled Python code to your local storage
+- ✅ Installs Python dependencies
+- ✅ Sets up Ollama for agent analysis
+- ✅ Starts the inference server
 - ✅ Configures everything automatically
 
 ### 3. Start Coding
@@ -22,7 +24,7 @@ Get instant cost optimization hints as you write LLM API calls!
 
 ## 🎯 What It Does
 
-AI-Gauge analyzes your code and provides real-time feedback on LLM model usage:
+AI-Gauge analyzes your code using a sophisticated agent pipeline and provides real-time feedback on LLM model usage:
 
 ```python
 # Your code:
@@ -44,9 +46,14 @@ response = client.chat.completions.create(
 - **Real-Time Analysis**: Analyzes as you type (optional)
 - **Multi-Language**: Python, JavaScript, TypeScript support
 
+### 🤖 Agent Orchestration
+- **3-Agent Pipeline**: Metadata extraction, complexity analysis, and reporting
+- **Local AI Integration**: Uses Ollama SLM within analyzer agent
+- **Intelligent Recommendations**: Context-aware model suggestions
+
 ### 💰 Cost Optimization
 - **Savings Alerts**: Shows potential cost reductions
-- **Model Recommendations**: Suggests appropriate alternatives
+- **Model Recommendations**: Suggests appropriate alternatives based on task complexity
 - **Usage Tracking**: Monitors your API spending patterns
 
 ### 🌱 Environmental Impact
@@ -74,9 +81,11 @@ response = client.chat.completions.create(
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `aiGauge.enabled` | `true` | Enable/disable the extension |
-| `aiGauge.realTimeAnalysis` | `false` | Analyze as you type |
 | `aiGauge.showInlineHints` | `true` | Show inline cost hints |
 | `aiGauge.costThreshold` | `20` | Min % savings to show hint |
+| `aiGauge.modelServerUrl` | `http://localhost:8080` | Inference server URL |
+| `aiGauge.serverAutoStart` | `true` | Automatically start inference server |
+| `aiGauge.serverHealthCheckInterval` | `30` | Health check interval (seconds) |
 
 ---
 
@@ -86,21 +95,38 @@ response = client.chat.completions.create(
 ┌─────────────────────────────────────────────────────────────┐
 │                    VS Code Extension                         │
 ├─────────────────────────────────────────────────────────────┤
-│  extension.ts          - Main entry, registers providers     │
+│  extension.ts          - Main entry, server lifecycle mgmt   │
 │  llmCallDetector.ts    - Detects LLM calls via regex/AST     │
-│  aiGaugeClient.ts      - Calls local Ollama inference        │
+│  aiGaugeClient.ts      - Communicates with inference server  │
 │  diagnosticsProvider.ts - Shows warnings + quick fixes       │
 │  inlineHintsProvider.ts - Shows inline cost/latency hints    │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Local Ollama Inference                         │
-│                  Fine-tuned Phi-3.5 Model                   │
-│                                                              │
-│  Model: ajayvenki01/ai-gauge                                 │
-│  Runs: Locally on user machine                               │
-│  Privacy: 100% local processing                              │
+│                 Inference Server (Flask)                    │
+├─────────────────────────────────────────────────────────────┤
+│  • REST API for extension communication                      │
+│  • Agent orchestration via LangGraph                        │
+│  • Health monitoring and automatic recovery                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Decision Module (LangGraph)                 │
+├─────────────────────────────────────────────────────────────┤
+│  Agent 1: Metadata Extractor - Analyzes call patterns       │
+│  Agent 2: Analyzer (Ollama SLM) - Assesses task complexity   │
+│  Agent 3: Reporter - Generates cost-saving recommendations  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Model Cards Database                           │
+├─────────────────────────────────────────────────────────────┤
+│  • Single source of truth for model metadata                │
+│  • Tiers, costs, carbon factors, performance data           │
+│  • Used by all agents for business logic                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -157,19 +183,34 @@ response = client.chat.completions.create(...)  # ⚠️ $5.00/1k • slow → �
 
 If auto-setup fails, you can manually configure:
 
-### 1. Install Ollama
+### 1. Install Python Dependencies
 ```bash
+pip install -r requirements.txt
+```
+
+### 2. Set Up Ollama (for Agent Analysis)
+```bash
+# Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
+
+# Start Ollama service
+ollama serve
+
+# Pull required model (handled automatically by server)
+ollama pull llama3.2:3b
 ```
 
-### 2. Pull AI-Gauge Model
+### 3. Start Inference Server
 ```bash
-ollama pull ajayvenki01/ai-gauge
+python src/inference_server.py
 ```
 
-### 3. Verify Installation
+### 4. Verify Installation
 ```bash
-ollama list  # Should show ai-gauge model
+# Check server health
+curl http://localhost:8080/health
+
+# Should return: {"status":"ok","agents":"ready","ollama":"connected"}
 ```
 
 ---
@@ -214,14 +255,16 @@ vsce package       # Create VSIX package
 
 ## 📊 Performance & Privacy
 
-- **⚡ Fast**: Local inference, no network latency
-- **🔒 Private**: All analysis happens locally
-- **📱 Offline**: Works without internet after setup
-- **🧠 Smart**: Fine-tuned Phi-3.5 model for accuracy
-- **🌍 Green**: Helps reduce AI's carbon footprint
+- **⚡ Smart**: Agent orchestration provides context-aware analysis
+- **🔒 Private**: All analysis happens locally on your machine
+- **📱 Offline**: Works without internet after initial setup
+- **🧠 Intelligent**: Multi-agent pipeline with local AI integration
+- **🌍 Green**: Helps reduce AI's carbon footprint through optimization
+- **🔄 Automatic**: Server lifecycle managed by extension
+- **💪 Reliable**: Health checks and automatic recovery
 
 ---
 
-**Ready to optimize your AI costs? Install AI-Gauge today!** 🚀
+**Ready to optimize your AI costs with agent-powered analysis? Install AI-Gauge today!** 🚀
 
 [Install from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge)

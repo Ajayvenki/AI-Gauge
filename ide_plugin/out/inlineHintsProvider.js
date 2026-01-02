@@ -82,10 +82,11 @@ class InlineHintsProvider {
     formatHintLabel(analysis) {
         const cost = `$${analysis.currentModel.estimatedCostPer1k.toFixed(2)}/1k`;
         const latency = analysis.currentModel.latencyTier;
+        const carbon = `${analysis.currentCarbonGrams.toFixed(3)}g CO₂`;
         if (analysis.verdict === 'OVERKILL') {
-            return `  ⚠️ ${cost} • ${latency} → 💡 save ${analysis.costSavingsPercent}%`;
+            return `  ⚠️ ${cost} • ${carbon} → 💡 save ${analysis.costSavingsPercent}%`;
         }
-        return `  ✓ ${cost} • ${latency}`;
+        return `  ✓ ${cost} • ${carbon}`;
     }
     /**
      * Format the hover tooltip
@@ -99,16 +100,23 @@ class InlineHintsProvider {
         md.appendMarkdown(`### Current Model\n`);
         md.appendMarkdown(`- **Model:** ${analysis.currentModel.modelId}\n`);
         md.appendMarkdown(`- **Cost:** $${analysis.currentModel.estimatedCostPer1k.toFixed(2)}/1k tokens\n`);
-        md.appendMarkdown(`- **Latency:** ${analysis.currentModel.latencyTier}\n\n`);
+        md.appendMarkdown(`- **Latency:** ${analysis.currentModel.latencyTier}\n`);
+        md.appendMarkdown(`- **CO₂:** ${analysis.currentCarbonGrams.toFixed(3)}g per call\n\n`);
         if (analysis.recommendedAlternative) {
             md.appendMarkdown(`### Recommended Alternative\n`);
             md.appendMarkdown(`- **Model:** ${analysis.recommendedAlternative.modelId}\n`);
             md.appendMarkdown(`- **Cost:** $${analysis.recommendedAlternative.estimatedCostPer1k.toFixed(2)}/1k tokens\n`);
-            md.appendMarkdown(`- **Latency:** ${analysis.recommendedAlternative.latencyTier}\n\n`);
+            md.appendMarkdown(`- **Latency:** ${analysis.recommendedAlternative.latencyTier}\n`);
+            if (analysis.alternativeCarbonGrams) {
+                md.appendMarkdown(`- **CO₂:** ${analysis.alternativeCarbonGrams.toFixed(3)}g per call\n\n`);
+            }
             md.appendMarkdown(`### Savings\n`);
             md.appendMarkdown(`- **Cost:** ${analysis.costSavingsPercent}% reduction\n`);
             if (analysis.latencySavingsMs > 0) {
                 md.appendMarkdown(`- **Latency:** ${analysis.latencySavingsMs}ms faster\n`);
+            }
+            if (analysis.carbonSavingsPercent > 0) {
+                md.appendMarkdown(`- **CO₂:** ${analysis.carbonSavingsPercent}% reduction\n`);
             }
         }
         if (analysis.reasoning) {

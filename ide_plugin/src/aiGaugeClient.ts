@@ -28,6 +28,11 @@ export interface AnalysisResult {
     costSavingsPercent: number;
     latencySavingsMs: number;
     
+    // Carbon emissions
+    currentCarbonGrams: number;
+    alternativeCarbonGrams: number | null;
+    carbonSavingsPercent: number;
+    
     reasoning: string;
     
     // Original call info for diagnostics
@@ -37,9 +42,9 @@ export interface AnalysisResult {
 
 export interface ClientConfig {
     serverUrl: string;
-    useOllamaDirect: boolean;
-    ollamaUrl: string;
-    ollamaModel: string;
+    useOllamaDirect: boolean;  // Kept for interface compatibility but always false
+    ollamaUrl: string;  // Not used in server mode
+    ollamaModel: string;  // Not used in server mode
 }
 
 export class AIGaugeClient {
@@ -60,20 +65,8 @@ export class AIGaugeClient {
      * Analyze a detected LLM call
      */
     async analyze(call: DetectedLLMCall): Promise<AnalysisResult> {
-        try {
-            // Priority: Ollama (local) > Server
-            console.log('AI-Gauge: Analyzing call with config:', this.config);
-            if (this.config.useOllamaDirect) {
-                console.log('AI-Gauge: Using Ollama direct analysis');
-                return await this.analyzeWithOllama(call);
-            } else {
-                console.log('AI-Gauge: Using inference server analysis');
-                return await this.analyzeWithServer(call);
-            }
-        } catch (error) {
-            console.warn('AI-Gauge analysis failed, using fallback:', error);
-            return this.fallbackAnalysis(call);
-        }
+        console.log('AI-Gauge: Analyzing call with server mode');
+        return await this.analyzeWithServer(call);
     }
 
     /**
@@ -94,132 +87,6 @@ export class AIGaugeClient {
 
         const result = await response.json();
         return this.parseResponse(result, call);
-    }
-
-    /**
-     * Analyze by calling Ollama directly (no inference server needed)
-     */
-    private async analyzeWithOllama(call: DetectedLLMCall): Promise<AnalysisResult> {
-        const prompt = this.buildOllamaPrompt(call);
-        console.log('AI-Gauge: Ollama prompt:', prompt);
-        
-        const response = await fetch(`${this.config.ollamaUrl}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: this.config.ollamaModel,
-                prompt: prompt,
-                stream: false,
-                options: {
-                    temperature: 0.1,
-                    num_predict: 512
-                }
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Ollama returned ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('AI-Gauge: Ollama response:', result.response);
-        return this.parseOllamaResponse(result.response, call);
-    }
-
-    /**
-     * Build prompt for direct Ollama analysis
-     */
-    private buildOllamaPrompt(call: DetectedLLMCall): string {
-        return `You are an AI model analyzer. Analyze this LLM API call and determine if the model choice is appropriate.
-
-TASK TO ANALYZE: ${call.surroundingCode}
-
-MODEL BEING USED: ${call.modelId} (${call.provider})
-
-INSTRUCTIONS:
-- Read the actual task in the code above
-- Determine if the model is appropriate for THIS SPECIFIC TASK
-- Do NOT copy example responses
-- Analyze the real complexity of the task described
-
-Respond with ONLY a JSON object in this exact format:
-{
-  "is_model_appropriate": true_or_false_based_on_actual_task,
-  "minimum_capable_tier": "budget|standard|premium|frontier",
-  "actual_complexity": "trivial|simple|moderate|complex|expert", 
-  "appropriateness_reasoning": "Your analysis of this specific task"
-}`;
-    }
-
-    /**
-     * Parse Ollama's raw response
-     */
-    private parseOllamaResponse(responseText: string, call: DetectedLLMCall): AnalysisResult {
-        console.log('AI-Gauge: Parsing Ollama response:', responseText);
-        let analysis: any = {};
-        
-        // Try to extract JSON from response
-        try {
-            const jsonMatch = responseText.match(/\{[\s\S]*?\}/);
-            if (jsonMatch) {
-                const cleanJson = jsonMatch[0]
-                    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
-                    .replace(/,(\s*[}\]])/g, '$1'); // Remove trailing commas
-                analysis = JSON.parse(cleanJson);
-                console.log('AI-Gauge: Parsed analysis:', analysis);
-            }
-        } catch (e) {
-            console.log('AI-Gauge: JSON parse failed, trying keyword analysis:', e);
-        }
-
-        // Keyword-based fallback if JSON parsing failed
-        if (!analysis.is_model_appropriate && analysis.is_model_appropriate !== false) {
-            console.log('AI-Gauge: Using keyword-based analysis');
-            const lowerResponse = responseText.toLowerCase();
-            
-            // Check for overkill indicators
-            const overkillKeywords = ['overkill', 'too powerful', 'unnecessary', 'waste', 'expensive', 'simpler model', 'cheaper'];
-            const appropriateKeywords = ['appropriate', 'suitable', 'necessary', 'complex', 'advanced'];
-            
-            const hasOverkill = overkillKeywords.some(k => lowerResponse.includes(k));
-            const hasAppropriate = appropriateKeywords.some(k => lowerResponse.includes(k));
-            
-            if (hasOverkill && !hasAppropriate) {
-                analysis.is_model_appropriate = false;
-                analysis.appropriateness_reasoning = 'Keyword analysis detected overkill';
-            } else if (hasAppropriate || lowerResponse.includes('appropriate')) {
-                analysis.is_model_appropriate = true;
-                analysis.appropriateness_reasoning = 'Keyword analysis detected appropriate';
-            } else {
-                // Default to overkill for frontier models if unclear
-                analysis.is_model_appropriate = !this.isLikelyOverkill(call);
-                analysis.appropriateness_reasoning = 'Default analysis based on model tier';
-            }
-        }
-
-        const isAppropriate = analysis.is_model_appropriate !== false;
-        
-        return {
-            verdict: isAppropriate ? 'APPROPRIATE' : 'OVERKILL',
-            confidence: 0.85,
-            currentModel: {
-                modelId: call.modelId,
-                provider: call.provider,
-                estimatedCostPer1k: this.estimateCost(call.modelId),
-                latencyTier: this.estimateLatencyTier(call.modelId)
-            },
-            recommendedAlternative: !isAppropriate ? {
-                modelId: this.suggestAlternative(call),
-                provider: call.provider,
-                estimatedCostPer1k: 0.15,
-                latencyTier: 'fast'
-            } : null,
-            costSavingsPercent: !isAppropriate ? 80 : 0,
-            latencySavingsMs: !isAppropriate ? 500 : 0,
-            reasoning: analysis.appropriateness_reasoning || (isAppropriate ? 'Model appears appropriate for this task' : 'Model may be overkill for this task'),
-            lineNumber: call.lineNumber,
-            rawCode: call.rawCallCode
-        };
     }
 
     /**
@@ -265,6 +132,9 @@ Respond with ONLY a JSON object in this exact format:
             
             costSavingsPercent: response.cost_savings_percent || 0,
             latencySavingsMs: response.latency_savings_ms || 0,
+            currentCarbonGrams: response.carbonFactor ? (response.carbonFactor * 0.028) : 0.028,
+            alternativeCarbonGrams: response.recommended_alternative ? 0.015 : null,
+            carbonSavingsPercent: response.recommended_alternative ? 46 : 0,
             
             reasoning: response.reasoning || '',
             
@@ -274,65 +144,23 @@ Respond with ONLY a JSON object in this exact format:
     }
 
     /**
-     * Fallback rule-based analysis when server is unavailable
+     * Suggest a cheaper alternative by querying the backend
      */
-    private fallbackAnalysis(call: DetectedLLMCall): AnalysisResult {
-        const isOverkill = this.isLikelyOverkill(call);
+    private async suggestAlternative(call: DetectedLLMCall): Promise<string> {
+        try {
+            const response = await fetch(`${this.config.serverUrl}/models/${encodeURIComponent(call.modelId)}/alternatives`);
+            if (response.ok) {
+                const data = await response.json();
+                const alternatives = data.alternatives || [];
+                if (alternatives.length > 0) {
+                    return alternatives[0].model_id;
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to get model alternatives from backend:', error);
+        }
         
-        return {
-            verdict: isOverkill ? 'OVERKILL' : 'APPROPRIATE',
-            confidence: 0.6, // Lower confidence for rule-based
-            
-            currentModel: {
-                modelId: call.modelId,
-                provider: call.provider,
-                estimatedCostPer1k: this.estimateCost(call.modelId),
-                latencyTier: this.estimateLatencyTier(call.modelId)
-            },
-            
-            recommendedAlternative: isOverkill ? {
-                modelId: this.suggestAlternative(call),
-                provider: call.provider,
-                estimatedCostPer1k: 0.15, // Estimate for cheaper model
-                latencyTier: 'fast'
-            } : null,
-            
-            costSavingsPercent: isOverkill ? 80 : 0,
-            latencySavingsMs: isOverkill ? 500 : 0,
-            
-            reasoning: isOverkill 
-                ? 'Task appears simple and may not require a frontier model'
-                : 'Model selection appears appropriate for the task',
-            
-            lineNumber: call.lineNumber,
-            rawCode: call.rawCallCode
-        };
-    }
-
-    /**
-     * Simple heuristic to detect likely overkill
-     */
-    private isLikelyOverkill(call: DetectedLLMCall): boolean {
-        const frontierModels = [
-            'gpt-4o', 'gpt-4-turbo', 'gpt-4',
-            'claude-3-opus', 'claude-3-5-sonnet',
-            'gemini-1.5-pro', 'gemini-ultra'
-        ];
-        
-        const isFrontierModel = frontierModels.some(m => 
-            call.modelId.toLowerCase().includes(m.toLowerCase())
-        );
-        
-        // Frontier model with no tools, no structured output = likely overkill
-        const isSimpleTask = !call.hasTools && !call.hasStructuredOutput;
-        
-        return isFrontierModel && isSimpleTask;
-    }
-
-    /**
-     * Suggest a cheaper alternative model
-     */
-    private suggestAlternative(call: DetectedLLMCall): string {
+        // Fallback alternatives
         const alternatives: Record<string, string> = {
             'gpt-4o': 'gpt-4o-mini',
             'gpt-4': 'gpt-3.5-turbo',
@@ -351,41 +179,86 @@ Respond with ONLY a JSON object in this exact format:
     }
 
     /**
-     * Estimate cost per 1k tokens for a model
+     * Estimate cost per 1k tokens by querying the backend
      */
-    private estimateCost(modelId: string): number {
-        const costs: Record<string, number> = {
-            'gpt-4o': 5.0,
-            'gpt-4o-mini': 0.15,
-            'gpt-4-turbo': 10.0,
-            'gpt-3.5-turbo': 0.5,
-            'claude-3-opus': 15.0,
-            'claude-3-sonnet': 3.0,
-            'claude-3-haiku': 0.25,
-            'gemini-1.5-pro': 3.5,
-            'gemini-1.5-flash': 0.075,
-        };
-        
-        for (const [model, cost] of Object.entries(costs)) {
-            if (modelId.toLowerCase().includes(model.toLowerCase())) {
-                return cost;
+    private async estimateCost(modelId: string): Promise<number> {
+        try {
+            const response = await fetch(`${this.config.serverUrl}/models/${encodeURIComponent(modelId)}/cost`);
+            if (response.ok) {
+                const data = await response.json();
+                return data.estimated_cost_per_1k || 1.0;
             }
+        } catch (error) {
+            console.warn('Failed to get model cost from backend:', error);
         }
-        
-        return 1.0; // Default
+        return 1.0; // Fallback
     }
 
     /**
-     * Estimate latency tier for a model
+     * Estimate latency tier by querying the backend
      */
-    private estimateLatencyTier(modelId: string): string {
-        const slowModels = ['opus', 'gpt-4-turbo', 'gemini-ultra'];
-        const fastModels = ['mini', 'flash', 'haiku', '3.5-turbo'];
+    private async estimateLatencyTier(modelId: string): Promise<string> {
+        try {
+            const response = await fetch(`${this.config.serverUrl}/models/${encodeURIComponent(modelId)}`);
+            if (response.ok) {
+                const data = await response.json();
+                return data.latency_tier || 'medium';
+            }
+        } catch (error) {
+            console.warn('Failed to get model latency from backend:', error);
+        }
+        return 'medium'; // Fallback
+    }
+
+    /**
+     * Get the tier of a model by querying the backend
+     */
+    private async getModelTier(modelId: string): Promise<string> {
+        try {
+            const response = await fetch(`${this.config.serverUrl}/models/${encodeURIComponent(modelId)}/tier`);
+            if (response.ok) {
+                const data = await response.json();
+                return data.tier || 'standard';
+            }
+        } catch (error) {
+            console.warn('Failed to get model tier from backend:', error);
+        }
+        return 'standard'; // Fallback
+    }
+
+    /**
+     * Calculate latency savings based on tier differences
+     */
+    private calculateLatencySavings(currentLatency: string, alternativeLatency: string): number {
+        if (!alternativeLatency) return 0;
         
-        const modelLower = modelId.toLowerCase();
+        const latencyValues = {
+            'ultra-fast': 100,
+            'fast': 200,
+            'medium': 400,
+            'slow': 1000
+        };
         
-        if (slowModels.some(m => modelLower.includes(m))) return 'slow';
-        if (fastModels.some(m => modelLower.includes(m))) return 'fast';
-        return 'medium';
+        const current = latencyValues[currentLatency as keyof typeof latencyValues] || 400;
+        const alternative = latencyValues[alternativeLatency as keyof typeof latencyValues] || 200;
+        
+        return Math.max(0, current - alternative);
+    }
+
+    /**
+     * Check if model is overkill based on tier comparison
+     */
+    private isModelOverkill(currentModelTier: string, minimumRequiredTier: string): boolean {
+        const tierRankings = {
+            'budget': 1,
+            'standard': 2, 
+            'premium': 3,
+            'frontier': 4
+        };
+        
+        const currentRank = tierRankings[currentModelTier as keyof typeof tierRankings] || 2;
+        const requiredRank = tierRankings[minimumRequiredTier as keyof typeof tierRankings] || 2;
+        
+        return currentRank > requiredRank;
     }
 }

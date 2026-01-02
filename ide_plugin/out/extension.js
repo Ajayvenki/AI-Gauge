@@ -48,22 +48,79 @@ const diagnosticsProvider_1 = require("./diagnosticsProvider");
 const inlineHintsProvider_1 = require("./inlineHintsProvider");
 const cp = __importStar(require("child_process"));
 const os = __importStar(require("os"));
+const path = __importStar(require("path"));
 let diagnosticsProvider;
 let inlineHintsProvider;
 let detector;
 let client;
 let statusBarItem;
+let inferenceServerProcess;
+let repoPath;
 function getClientConfig() {
     const config = vscode.workspace.getConfiguration('aiGauge');
     return {
         serverUrl: config.get('modelServerUrl') || 'http://localhost:8080',
-        useOllamaDirect: config.get('useOllamaDirect') || false,
-        ollamaUrl: config.get('ollamaUrl') || 'http://localhost:11434',
-        ollamaModel: config.get('ollamaModel') || 'ai-gauge'
+        useOllamaDirect: false, // Always use server mode
+        ollamaUrl: 'http://localhost:11434', // Not used in server mode
+        ollamaModel: 'ai-gauge' // Not used in server mode
     };
+}
+/**
+ * Detect AI-Gauge repository path
+ */
+function detectRepoPath() {
+    const possiblePaths = [
+        path.join(os.homedir(), 'ai-gauge'),
+        path.join(os.homedir(), 'AI-Gauge'),
+        path.join(os.homedir(), 'Desktop', 'ai-gauge'),
+        path.join(os.homedir(), 'Desktop', 'AI-Gauge'),
+        path.join(os.homedir(), 'Documents', 'ai-gauge'),
+        path.join(os.homedir(), 'Documents', 'AI-Gauge')
+    ];
+    // Check current workspace
+    if (vscode.workspace.workspaceFolders) {
+        for (const folder of vscode.workspace.workspaceFolders) {
+            const workspacePath = folder.uri.fsPath;
+            if (isValidRepo(workspacePath)) {
+                return workspacePath;
+            }
+        }
+    }
+    // Check common locations
+    for (const repoPath of possiblePaths) {
+        if (isValidRepo(repoPath)) {
+            return repoPath;
+        }
+    }
+    return undefined;
+}
+/**
+ * Check if path contains valid AI-Gauge repository
+ */
+function isValidRepo(repoPath) {
+    try {
+        const fs = require('fs');
+        const serverPath = path.join(repoPath, 'src', 'inference_server.py');
+        const requirementsPath = path.join(repoPath, 'requirements.txt');
+        return fs.existsSync(serverPath) && fs.existsSync(requirementsPath);
+    }
+    catch {
+        return false;
+    }
 }
 async function activate(context) {
     console.log('AI-Gauge extension activated');
+    // Detect repository path
+    repoPath = detectRepoPath();
+    if (!repoPath) {
+        vscode.window.showErrorMessage('AI-Gauge repository not found. Please clone the repository and run setup.sh first.', 'Open Repository').then(selection => {
+            if (selection === 'Open Repository') {
+                vscode.env.openExternal(vscode.Uri.parse('https://github.com/ajayvenki2910/ai-gauge'));
+            }
+        });
+        return;
+    }
+    console.log('AI-Gauge: Repository found at', repoPath);
     // Initialize status bar
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBarItem.command = 'aiGauge.showSetupStatus';
@@ -111,6 +168,7 @@ async function activate(context) {
  * Perform automatic setup of dependencies
  */
 async function performAutoSetup(context) {
+    const currentVersion = context.extension.packageJSON.version;
     const setupState = context.globalState.get('aiGauge.setupComplete', false);
     if (setupState) {
         // Quick check if everything is still working
@@ -120,9 +178,11 @@ async function performAutoSetup(context) {
         }
     }
     // Perform full setup check
-    const dependencies = await checkDependencies();
-    if (dependencies.ollamaInstalled && dependencies.modelExists && dependencies.pythonReady) {
+    const dependencies = await checkDependencies(context);
+    if (dependencies.ollamaInstalled && dependencies.modelExists && dependencies.pythonReady && dependencies.serverAvailable && dependencies.serverRunning) {
         context.globalState.update('aiGauge.setupComplete', true);
+        // Start server if not already running
+        await ensureInferenceServer(context);
         return true;
     }
     // Ask user if they want auto-setup
@@ -132,7 +192,7 @@ async function performAutoSetup(context) {
         return false;
     }
     // Perform auto-setup
-    const success = await runAutoSetup(dependencies);
+    const success = await runAutoSetup(context, dependencies, currentVersion);
     if (success) {
         context.globalState.update('aiGauge.setupComplete', true);
         vscode.window.showInformationMessage('AI-Gauge setup complete! You can now analyze your LLM calls.');
@@ -167,16 +227,18 @@ async function checkDependenciesHealth() {
 /**
  * Check all dependencies
  */
-async function checkDependencies() {
+async function checkDependencies(context) {
     const ollamaInstalled = await checkOllamaInstalled();
     const modelExists = ollamaInstalled ? await checkModelExists() : false;
     const pythonReady = await checkPythonEnvironment();
-    return { ollamaInstalled, modelExists, pythonReady };
+    const serverAvailable = await checkServerAvailable(context);
+    const serverRunning = pythonReady && serverAvailable ? await checkServerHealth() : false;
+    return { ollamaInstalled, modelExists, pythonReady, serverAvailable, serverRunning };
 }
 /**
  * Run the automatic setup process
  */
-async function runAutoSetup(dependencies) {
+async function runAutoSetup(context, dependencies, currentVersion) {
     return await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: 'Setting up AI-Gauge',
@@ -184,7 +246,16 @@ async function runAutoSetup(dependencies) {
     }, async (progress, token) => {
         try {
             let step = 0;
-            const totalSteps = 3;
+            let totalSteps = 0;
+            // Count total steps needed
+            if (!dependencies.ollamaInstalled)
+                totalSteps++;
+            totalSteps++; // Always start Ollama service
+            if (!dependencies.modelExists)
+                totalSteps++;
+            if (!dependencies.pythonReady)
+                totalSteps++;
+            totalSteps++; // Always start server
             // Step 1: Install Ollama if needed
             if (!dependencies.ollamaInstalled) {
                 progress.report({ message: 'Installing Ollama...', increment: (step / totalSteps) * 100 });
@@ -214,19 +285,31 @@ async function runAutoSetup(dependencies) {
                 if (!modelSuccess) {
                     throw new Error('Failed to download AI-Gauge model');
                 }
+                step++;
             }
-            step++;
             // Step 4: Setup Python environment
             if (!dependencies.pythonReady) {
-                progress.report({ message: 'Setting up Python environment...', increment: (100 / totalSteps) * step });
+                progress.report({ message: 'Setting up Python environment...', increment: (step / totalSteps) * 100 });
                 if (token.isCancellationRequested)
                     return false;
-                const pythonSuccess = await setupPythonEnvironment();
+                const pythonSuccess = await setupPythonEnvironment(context, currentVersion);
                 if (!pythonSuccess) {
                     throw new Error('Failed to setup Python environment');
                 }
+                step++;
             }
+            // Step 5: Start inference server
+            progress.report({ message: 'Starting inference server...', increment: (step / totalSteps) * 100 });
+            if (token.isCancellationRequested)
+                return false;
+            const serverSuccess = await startInferenceServer(context);
+            if (!serverSuccess) {
+                throw new Error('Failed to start inference server');
+            }
+            step++;
             progress.report({ message: 'Setup complete!', increment: 100 });
+            // Mark version as installed
+            context.globalState.update('aiGauge.installedVersion', currentVersion);
             return true;
         }
         catch (error) {
@@ -344,13 +427,44 @@ async function pullAIGaugeModel() {
 /**
  * Setup Python environment
  */
-async function setupPythonEnvironment() {
-    // For now, just check if pip is available
-    // In a full implementation, this could install requirements.txt
+async function setupPythonEnvironment(context, currentVersion) {
     return new Promise((resolve) => {
-        cp.exec('python3 -m pip --version', (error) => {
-            resolve(!error);
-        });
+        if (!repoPath) {
+            console.error('AI-Gauge: Repository path not found for Python setup');
+            resolve(false);
+            return;
+        }
+        const requirementsPath = path.join(repoPath, 'requirements.txt');
+        const fs = require('fs');
+        if (fs.existsSync(requirementsPath)) {
+            console.log('AI-Gauge: Installing Python requirements from', requirementsPath);
+            cp.exec(`python3 -m pip install -r "${requirementsPath}"`, { cwd: repoPath }, (error, stdout, stderr) => {
+                if (error) {
+                    console.error('AI-Gauge: Failed to install Python requirements:', error);
+                    console.error('AI-Gauge: stderr:', stderr);
+                    resolve(false);
+                }
+                else {
+                    console.log('AI-Gauge: Python requirements installed successfully');
+                    console.log('AI-Gauge: pip output:', stdout);
+                    resolve(true);
+                }
+            });
+        }
+        else {
+            console.log('AI-Gauge: No requirements.txt found, checking pip availability');
+            // Just check if pip is available
+            cp.exec('python3 -m pip --version', (error, stdout) => {
+                if (error) {
+                    console.error('AI-Gauge: pip not available:', error);
+                    resolve(false);
+                }
+                else {
+                    console.log('AI-Gauge: pip available:', stdout.trim());
+                    resolve(true);
+                }
+            });
+        }
     });
 }
 /**
@@ -479,7 +593,144 @@ function debounce(func, wait) {
         timeout = setTimeout(() => func(...args), wait);
     });
 }
+/**
+ * Check if inference server code is available (bundled with extension)
+ */
+async function checkServerAvailable(context) {
+    try {
+        if (!repoPath)
+            return false;
+        const serverPath = path.join(repoPath, 'src', 'inference_server.py');
+        const fs = require('fs');
+        return fs.existsSync(serverPath);
+    }
+    catch (error) {
+        console.log('AI-Gauge: Server availability check failed:', error);
+        return false;
+    }
+}
+/**
+ * Check if inference server is healthy
+ */
+async function checkServerHealth() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch('http://localhost:8080/health', {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (response.ok) {
+            const data = await response.json();
+            return data.status === 'ok';
+        }
+        return false;
+    }
+    catch (error) {
+        console.log('Server health check failed:', error);
+        return false;
+    }
+}
+/**
+ * Copy directory recursively
+ */
+async function copyDirectory(src, dest) {
+    const fs = require('fs');
+    const path = require('path');
+    try {
+        if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+        }
+        const entries = fs.readdirSync(src, { withFileTypes: true });
+        for (const entry of entries) {
+            const srcPath = path.join(src, entry.name);
+            const destPath = path.join(dest, entry.name);
+            if (entry.isDirectory()) {
+                await copyDirectory(srcPath, destPath);
+            }
+            else {
+                fs.copyFileSync(srcPath, destPath);
+            }
+        }
+    }
+    catch (error) {
+        console.error(`Failed to copy directory from ${src} to ${dest}:`, error);
+        throw error;
+    }
+}
+/**
+ * Start the inference server
+ */
+async function startInferenceServer(context) {
+    return new Promise(async (resolve) => {
+        try {
+            if (!repoPath) {
+                console.error('AI-Gauge: Repository path not found');
+                resolve(false);
+                return;
+            }
+            // Find Python executable
+            const pythonCmd = process.platform === 'win32' ? 'python' : 'python';
+            // Get the path to the inference server in repository
+            const serverPath = path.join(repoPath, 'src', 'inference_server.py');
+            console.log('AI-Gauge: Starting inference server:', pythonCmd, serverPath);
+            inferenceServerProcess = cp.spawn(pythonCmd, [serverPath], {
+                cwd: repoPath,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                detached: false
+            });
+            // Handle process output
+            inferenceServerProcess.stdout?.on('data', (data) => {
+                console.log('AI-Gauge Server stdout:', data.toString().trim());
+            });
+            inferenceServerProcess.stderr?.on('data', (data) => {
+                console.error('AI-Gauge Server stderr:', data.toString().trim());
+            });
+            inferenceServerProcess.on('error', (error) => {
+                console.error('AI-Gauge Failed to start server process:', error);
+                resolve(false);
+            });
+            inferenceServerProcess.on('exit', (code, signal) => {
+                console.log(`AI-Gauge Server process exited with code ${code}, signal ${signal}`);
+            });
+            // Wait for server to be ready
+            setTimeout(async () => {
+                const healthy = await checkServerHealth();
+                if (healthy) {
+                    console.log('AI-Gauge: Inference server started successfully');
+                    resolve(true);
+                }
+                else {
+                    console.error('AI-Gauge: Server started but health check failed');
+                    inferenceServerProcess?.kill();
+                    resolve(false);
+                }
+            }, 5000); // Give time for setup
+        }
+        catch (error) {
+            console.error('AI-Gauge: Error starting inference server:', error);
+            resolve(false);
+        }
+    });
+}
+/**
+ * Ensure inference server is running
+ */
+async function ensureInferenceServer(context) {
+    const healthy = await checkServerHealth();
+    if (healthy) {
+        return true;
+    }
+    console.log('Server not healthy, starting...');
+    return await startInferenceServer(context);
+}
 function deactivate() {
+    // Stop inference server
+    if (inferenceServerProcess) {
+        console.log('Stopping inference server...');
+        inferenceServerProcess.kill();
+        inferenceServerProcess = undefined;
+    }
     diagnosticsProvider?.dispose();
 }
 //# sourceMappingURL=extension.js.map

@@ -1,0 +1,10 @@
+# AI-Gauge dependencies
+
+# Core
+python-dotenv>=1.0.0
+langgraph>=0.2.0
+requests>=2.28.0
+
+# Inference server (for IDE plugin)
+flask>=3.0.0
+flask-cors>=4.0.0

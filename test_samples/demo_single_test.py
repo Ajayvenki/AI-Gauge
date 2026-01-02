@@ -6,9 +6,9 @@ AI-Gauge Single Test Demo
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
-from decision_module import analyze_llm_call
+from src.decision_module import analyze_llm_call
 
 
 def run_simple_test():

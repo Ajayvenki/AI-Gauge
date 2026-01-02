@@ -91,15 +91,34 @@ main() {
     
     if [ "$OLLAMA_INSTALLED" = "no" ]; then
         echo ""
-        echo -e "${YELLOW}Ollama is not installed.${NC}"
+        echo -e "${YELLOW}Ollama is not installed. Installing automatically...${NC}"
         echo ""
-        echo "Please install Ollama first:"
-        echo "  macOS:   brew install ollama"
-        echo "  Linux:   curl -fsSL https://ollama.ai/install.sh | sh"
-        echo "  Windows: Download from https://ollama.ai/download"
-        echo ""
-        echo "Then run this script again."
-        exit 1
+        
+        # Detect OS and install Ollama
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            if command -v brew &> /dev/null; then
+                echo "Installing Ollama via Homebrew..."
+                brew install ollama
+            else
+                echo "Homebrew not found. Installing Ollama via official script..."
+                curl -fsSL https://ollama.ai/install.sh | sh
+            fi
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Linux
+            echo "Installing Ollama for Linux..."
+            curl -fsSL https://ollama.ai/install.sh | sh
+        else
+            echo -e "${RED}Unsupported OS: $OSTYPE${NC}"
+            echo "Please install Ollama manually from: https://ollama.ai/download"
+            exit 1
+        fi
+        
+        # Verify installation
+        if ! check_ollama; then
+            echo -e "${RED}Failed to install Ollama${NC}"
+            exit 1
+        fi
     fi
     
     # Check if Ollama is running

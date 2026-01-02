@@ -51,7 +51,7 @@ from dotenv import load_dotenv
 
 # Import local inference module
 try:
-    from local_inference import (
+    from .local_inference import (
         analyze_with_local_model,
         get_model_info
     )
@@ -63,7 +63,7 @@ except ImportError:
 from langgraph.graph import StateGraph, END
 
 # Import our model cards
-from model_cards import (
+from .model_cards import (
     MODEL_CARDS,
     list_models_by_provider,
     get_model_card,
@@ -626,7 +626,7 @@ def get_alternative_models(
     Only returns models that are DIFFERENT from the current one.
     Uses tier info from model_cards.py.
     """
-    from model_cards import MODEL_CARDS
+    from .model_cards import MODEL_CARDS
     
     # Get all models at or below the minimum tier
     candidates = []
@@ -974,7 +974,7 @@ def analyzer_agent(state: AgentState) -> AgentState:
 
 def get_all_models_in_tier(tier: str) -> list:
     """Get all stable models in a specific tier from MODEL_CARDS."""
-    from model_cards import MODEL_CARDS
+    from .model_cards import MODEL_CARDS
     return [card for card in MODEL_CARDS if card.tier == tier and card.status == "stable"]
 
 

@@ -29,9 +29,23 @@ AI-Gauge intercepts your API calls **before** they execute, analyzing task compl
 
 ## 🚀 Quick Start
 
-1. **📦 Install** from VS Code Marketplace: Search "AI-Gauge"
-2. **⚙️ Setup**: The extension automatically sets up Ollama and downloads the analysis model
-3. **💻 Code**: Start coding - get inline recommendations for every API call
+1. **📦 Download Runtime Package**:
+   ```bash
+   # Download and extract the runtime package
+   wget https://github.com/ajayvenki2910/ai-gauge/releases/download/v0.4.3/ai-gauge-runtime-v0.4.3.tar.gz
+   tar -xzf ai-gauge-runtime-v0.4.3.tar.gz
+   cd ai-gauge-runtime-v0.4.3
+   ```
+
+2. **⚙️ Run Setup**:
+   ```bash
+   ./setup.sh
+   ```
+   This installs Ollama, downloads the AI model, and sets up dependencies.
+
+3. **🔌 Install Extension**: Search "AI-Gauge" in VS Code Marketplace
+
+4. **💻 Code**: Start coding - get automatic LLM analysis and recommendations!
 
 ## 📊 Real Impact
 

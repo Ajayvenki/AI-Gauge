@@ -22,6 +22,9 @@ export interface AnalysisResult {
     } | null;
     costSavingsPercent: number;
     latencySavingsMs: number;
+    currentCarbonGrams: number;
+    alternativeCarbonGrams: number | null;
+    carbonSavingsPercent: number;
     reasoning: string;
     lineNumber: number;
     rawCode: string;
@@ -48,18 +51,6 @@ export declare class AIGaugeClient {
      */
     private analyzeWithServer;
     /**
-     * Analyze by calling Ollama directly (no inference server needed)
-     */
-    private analyzeWithOllama;
-    /**
-     * Build prompt for direct Ollama analysis
-     */
-    private buildOllamaPrompt;
-    /**
-     * Parse Ollama's raw response
-     */
-    private parseOllamaResponse;
-    /**
      * Build the analysis payload in the format expected by the model
      */
     private buildPayload;
@@ -68,23 +59,27 @@ export declare class AIGaugeClient {
      */
     private parseResponse;
     /**
-     * Fallback rule-based analysis when server is unavailable
-     */
-    private fallbackAnalysis;
-    /**
-     * Simple heuristic to detect likely overkill
-     */
-    private isLikelyOverkill;
-    /**
-     * Suggest a cheaper alternative model
+     * Suggest a cheaper alternative by querying the backend
      */
     private suggestAlternative;
     /**
-     * Estimate cost per 1k tokens for a model
+     * Estimate cost per 1k tokens by querying the backend
      */
     private estimateCost;
     /**
-     * Estimate latency tier for a model
+     * Estimate latency tier by querying the backend
      */
     private estimateLatencyTier;
+    /**
+     * Get the tier of a model by querying the backend
+     */
+    private getModelTier;
+    /**
+     * Calculate latency savings based on tier differences
+     */
+    private calculateLatencySavings;
+    /**
+     * Check if model is overkill based on tier comparison
+     */
+    private isModelOverkill;
 }

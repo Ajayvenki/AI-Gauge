@@ -2,81 +2,118 @@
 
 ## Overview
 
-AI-Gauge is a sophisticated system for optimizing LLM API costs through intelligent pre-call analysis. The system intercepts API calls before execution, analyzes task requirements using local AI, and provides cost/carbon estimates to help developers make informed decisions.
+AI-Gauge is a sophisticated system for optimizing LLM API costs through intelligent pre-call analysis. The system uses a **server-first architecture** with **agent orchestration** to intercept API calls before execution, analyze task requirements using local AI, and provide cost/carbon estimates to help developers make informed decisions.
 
 ## System Architecture
 
 ### Core Components
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   VS Code       │    │  Decision       │    │   Local AI      │
-│  Extension      │◄──►│   Pipeline      │◄──►│   Inference     │
-│                 │    │                 │    │                 │
-│ • Call Intercept│    │ • Metadata      │    │ • Phi-3.5 Model │
-│ • UI Integration│    │ • Analysis      │    │ • Cost Analysis │
-│ • User Feedback │    │ • Recommendations│    │ • Carbon Calc  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   VS Code       │    │  Inference      │    │   Decision      │    │   Local AI      │
+│  Extension      │◄──►│   Server        │◄──►│   Module        │◄──►│   (Ollama)     │
+│                 │    │                 │    │   Agents        │    │                 │
+│ • Call Intercept│    │ • API Endpoint  │    │ • Agent Pipeline│    │ • SLM for       │
+│ • Server Mgmt   │    │ • Health Checks │    │ • Model Cards   │    │   Analysis      │
+│ • UI Integration│    │ • Auto-startup  │    │ • Orchestration │    │ • Task Assess   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
 ### Data Flow
 
 1. **Call Interception**: VS Code extension detects LLM API calls in user code
-2. **Metadata Extraction**: Comprehensive analysis of call parameters, context, and requirements
-3. **AI Analysis**: Local model assesses task complexity and optimal model selection
-4. **Recommendation Generation**: Cost, carbon, and performance analysis
-5. **User Decision**: Developer chooses whether to proceed with recommendation
+2. **Server Health Check**: Extension verifies inference server is running
+3. **API Call**: Extension sends metadata to local inference server
+4. **Agent Orchestration**: Decision module runs 3-agent LangGraph pipeline
+5. **AI Analysis**: Analyzer agent uses Ollama SLM to assess task complexity
+6. **Model Card Lookup**: All tier/cost/CO2 data retrieved from model cards
+7. **Recommendation**: Structured analysis returned to extension
+8. **User Decision**: Developer chooses whether to proceed with recommendation
 
 ## Technical Implementation
 
 ### VS Code Extension (TypeScript)
 
 **Location**: `ide_plugin/`
-**Purpose**: IDE integration and user interaction
+**Purpose**: IDE integration, server management, and user interaction
 
 **Key Components**:
-- `src/extension.ts`: Main extension entry point
+- `src/extension.ts`: Main extension entry point with server lifecycle management
 - `src/llmCallDetector.ts`: API call pattern recognition
+- `src/aiGaugeClient.ts`: Server communication (server-mode only)
 - `src/diagnosticsProvider.ts`: VS Code diagnostics integration
 - `src/inlineHintsProvider.ts`: Real-time code hints
+
+**Server Management**:
+- Automatic inference server startup on extension activation
+- Health checks before analysis attempts
+- Graceful server shutdown on deactivation
+- Port conflict handling and retries
 
 **Call Detection**:
 - Regex-based pattern matching for common LLM SDK calls
 - AST analysis for complex call structures
 - Real-time monitoring of open files
 
-### Decision Pipeline (Python)
+### Inference Server (Python/Flask)
+
+**Location**: `src/inference_server.py`
+**Purpose**: REST API endpoint for extension communication
+
+**Key Features**:
+- Flask-based REST API (`/analyze`, `/health`)
+- Decision module integration
+- CORS support for VS Code extension
+- Error handling and logging
+
+### Decision Module - Agent Orchestration (Python)
 
 **Location**: `src/decision_module.py`
-**Purpose**: Orchestrates the analysis workflow
+**Purpose**: Core analysis engine with LangGraph multi-agent system
 
-**Architecture**: LangGraph-based multi-agent system
+**Architecture**: LangGraph-based 3-agent pipeline
 
 **Agents**:
-1. **Metadata Extractor**: Raw data collection and preprocessing
-2. **Analyzer**: AI-powered task complexity assessment
-3. **Reporter**: Human-readable recommendation generation
+1. **Metadata Extractor**: Raw data collection and preprocessing from API calls
+2. **Analyzer**: Uses Ollama SLM to assess task complexity and model appropriateness
+3. **Reporter**: Generates human-readable recommendations using model card data
 
 **State Management**:
-- TypedDict-based state schema
-- Immutable state transitions
-- Comprehensive error handling
+- TypedDict-based state schema for agent communication
+- Immutable state transitions between agents
+- Comprehensive error handling and fallback logic
 
-### Local Inference Engine (Python)
+### Model Cards - Single Source of Truth (Python)
+
+**Location**: `src/model_cards.py`
+**Purpose**: Authoritative database of all model metadata
+
+**Contains**:
+- Model specifications (context windows, capabilities)
+- Pricing information (per-token rates, regional variations)
+- Carbon factors (energy consumption estimates)
+- Tier classifications (budget/standard/premium/frontier)
+- Performance metrics (latency, throughput)
+
+**Key Functions**:
+- `get_model_card()`: Retrieve complete model information
+- `TIER_RANKINGS`: Hierarchical model tier system
+- `is_model_overkill_by_tier()`: Tier-based overkill detection
+
+### Local AI Inference - Ollama SLM (Python)
 
 **Location**: `src/local_inference.py`
-**Purpose**: Local AI model management and inference
+**Purpose**: Ollama integration for AI-powered task analysis
 
-**Supported Backends**:
-- **Primary**: Ollama (recommended for ease of use)
-- **Fallback**: llama-cpp-python (advanced users)
-- **Future**: Direct model loading
+**Role in Architecture**:
+- Provides Small Language Model (SLM) capabilities within analyzer agent
+- Task complexity assessment and reasoning
+- Local execution for privacy and performance
+- Integrated into decision module agent pipeline
 
-**Model Details**:
-- **Base Model**: Phi-3.5 (3.8B parameters)
-- **Fine-tuning**: Custom dataset for cost optimization analysis
-- **Quantization**: 4-bit quantization for efficiency
-- **Context Window**: 4096 tokens
+**Supported Models**:
+- **Primary**: Fine-tuned Phi-3.5 model via Ollama
+- **Capabilities**: Task analysis, complexity classification, model recommendations
 
 ## Model Selection & Training
 
@@ -142,15 +179,30 @@ AI-Gauge is a sophisticated system for optimizing LLM API costs through intellig
 ### Data Handling
 
 **Privacy Principles**:
-- **Zero External Data**: All analysis happens locally
-- **No Call Content Storage**: Only metadata is processed
+- **Local-First Architecture**: All analysis happens on user's machine
+- **No External Data Transmission**: Code and metadata stay local
 - **Ephemeral Processing**: No persistent data retention
+- **User-Controlled Server**: Inference server runs locally under user control
 
 **Security Measures**:
-- Local model execution only
-- No internet connectivity required for core functionality
-- Secure API key handling
-- Minimal attack surface
+- Local inference server with no external network access
+- Secure inter-process communication between extension and server
+- No API keys transmitted externally
+- Minimal attack surface through local-only operation
+
+### Server Architecture Security
+
+**Local Server Benefits**:
+- No internet exposure - server only accessible locally
+- Automatic lifecycle management by extension
+- Health checks ensure server integrity
+- Graceful shutdown on extension deactivation
+
+**Process Isolation**:
+- Separate Python process for inference server
+- Controlled communication via HTTP localhost
+- Extension manages server startup/shutdown
+- No persistent background services
 
 ### Compliance Considerations
 
