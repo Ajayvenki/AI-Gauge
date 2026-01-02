@@ -58,7 +58,14 @@ cd ai-gauge-runtime-v0.4.3
 - ✅ **Clean User Experience**: 33KB download vs full repo clone
 - ✅ **Zero Workspace Clutter**: No __pycache__, tests, or dev files in user workspace
 - ✅ **Professional Distribution**: Feels like real software, not a development project
+- ✅ **Runtime Package Detection**: Extension automatically finds runtime packages in any location
 - ✅ **Reliable Operation**: No Python bytecode compatibility issues
+
+#### Extension Fixes (Jan 2, 2026)
+- **Detection Logic**: Updated `isValidRepo()` to check runtime package structure (`inference_server.py` in root)
+- **Server Startup**: Modified `startInferenceServer()` to use correct path for runtime packages
+- **Backward Compatibility**: Supports both runtime package and development repository structures
+- **Error Resolution**: Fixed "fetch failed" errors when extension couldn't locate local installation
 
 #### Next Steps
 - Upload `ai-gauge-runtime-v0.4.3.tar.gz` to GitHub releases
