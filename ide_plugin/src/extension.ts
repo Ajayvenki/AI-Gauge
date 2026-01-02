@@ -45,9 +45,17 @@ function detectRepoPath(): string | undefined {
             const workspacePath = folder.uri.fsPath;
             console.log('AI-Gauge: Checking workspace path:', workspacePath);
 
+            // Check if workspace itself is a runtime package
             if (isRuntimePackage(workspacePath)) {
                 console.log('AI-Gauge: ✅ Found runtime package in current workspace:', workspacePath);
                 return workspacePath;
+            }
+
+            // Check for runtime package in common subdirectories
+            const runtimeSubPath = path.join(workspacePath, 'runtime');
+            if (isRuntimePackage(runtimeSubPath)) {
+                console.log('AI-Gauge: ✅ Found runtime package in workspace runtime/ subdirectory:', runtimeSubPath);
+                return runtimeSubPath;
             }
         }
         console.log('AI-Gauge: No runtime package found in current workspace');
@@ -60,9 +68,18 @@ function detectRepoPath(): string | undefined {
         console.log('AI-Gauge: Checking current workspace for any valid repo...');
         for (const folder of vscode.workspace.workspaceFolders) {
             const workspacePath = folder.uri.fsPath;
+
+            // Check if workspace itself is a valid repo
             if (isValidRepo(workspacePath)) {
                 console.log('AI-Gauge: Found repository in current workspace:', workspacePath);
                 return workspacePath;
+            }
+
+            // Check for valid repo in common subdirectories
+            const runtimeSubPath = path.join(workspacePath, 'runtime');
+            if (isValidRepo(runtimeSubPath)) {
+                console.log('AI-Gauge: Found repository in workspace runtime/ subdirectory:', runtimeSubPath);
+                return runtimeSubPath;
             }
         }
     }

@@ -5,6 +5,18 @@ All notable changes to AI-Gauge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2025-01-02
+
+### Fixed
+- **Subdirectory Detection**: Extension now detects runtime packages in `runtime/` subdirectories within workspaces
+- **Workspace Structure Support**: Handles cases where users place runtime packages in subfolders
+- **Repository Path Resolution**: Correctly identifies runtime package location when nested in workspace subdirectories
+
+### Technical
+- **Enhanced `detectRepoPath()`**: Now checks both workspace root and `runtime/` subdirectory for runtime packages
+- **Improved Detection Logic**: Added subdirectory scanning for both runtime packages and valid repositories
+- **Detection Priority**: Workspace root > Workspace runtime/ subdir > Common locations
+
 ## [0.4.6] - 2025-01-02
 
 ### Fixed
