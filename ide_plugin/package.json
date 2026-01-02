@@ -95,8 +95,5 @@
     "tree-sitter-python": "^0.20.0",
     "tree-sitter-javascript": "^0.20.0",
     "tree-sitter-typescript": "^0.20.0"
-  },
-  "files": [
-    "out/**/*"
-  ]
+  }
 }
