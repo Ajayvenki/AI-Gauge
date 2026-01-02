@@ -59,6 +59,10 @@ export declare class AIGaugeClient {
      */
     private parseResponse;
     /**
+     * Get default cost estimate for a model (synchronous fallback)
+     */
+    private getDefaultCost;
+    /**
      * Suggest a cheaper alternative by querying the backend
      */
     private suggestAlternative;

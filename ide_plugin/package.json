@@ -6,7 +6,7 @@
     "color": "#1e40af",
     "theme": "dark"
   },
-  "version": "0.5.2",
+  "version": "0.5.4",
   "publisher": "Ajayvenki2910",
   "engines": {
     "vscode": "^1.85.0"

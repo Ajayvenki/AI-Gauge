@@ -37,7 +37,7 @@ HOST = os.getenv('AI_GAUGE_HOST', '127.0.0.1')
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint with backend status."""
-    model_info = get_model_info()
+    model_info = get_local_model_info()
     return jsonify({
         'status': 'ok',
         'version': '0.2.0',
@@ -192,6 +192,33 @@ def get_model_info(model_id: str):
         'supports_function_calling': card.supports_function_calling,
         'supports_structured_output': card.supports_structured_output,
         'status': card.status
+    })
+
+
+@app.route('/models/<model_id>/cost', methods=['GET'])
+def get_model_cost(model_id: str):
+    """Get cost information for a specific model."""
+    card = get_model_card(model_id)
+    if not card:
+        # Return default costs for unknown models
+        return jsonify({
+            'model_id': model_id,
+            'estimated_cost_per_1k': 1.0,
+            'input_cost_per_1m': 1.0,
+            'output_cost_per_1m': 2.0,
+            'carbon_factor': 1.0
+        })
+    
+    # Calculate estimated cost per 1k tokens (average of input/output)
+    avg_cost_per_1m = (card.input_cost_per_1m + card.output_cost_per_1m) / 2
+    cost_per_1k = avg_cost_per_1m / 1000  # Convert from per-1M to per-1K
+    
+    return jsonify({
+        'model_id': card.model_id,
+        'estimated_cost_per_1k': cost_per_1k,
+        'input_cost_per_1m': card.input_cost_per_1m,
+        'output_cost_per_1m': card.output_cost_per_1m,
+        'carbon_factor': card.carbon_factor
     })
 
 

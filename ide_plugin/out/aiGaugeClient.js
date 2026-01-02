@@ -62,30 +62,62 @@ class AIGaugeClient {
      * Parse the model's response into AnalysisResult
      */
     parseResponse(response, call) {
+        // Server returns camelCase (currentModel) - handle both formats
+        const serverCurrentModel = response.currentModel || {};
+        const serverAlt = response.recommendedAlternative || response.recommended_alternative;
+        // Get cost from server response, fallback to defaults
+        const currentCost = Number(serverCurrentModel.estimatedCostPer1k) ||
+            Number(response.current_cost) ||
+            this.getDefaultCost(call.modelId);
+        const carbonFactor = Number(response.carbonFactor) || 1.0;
+        const carbonGrams = currentCost > 0 ? (carbonFactor * currentCost * 0.001) : 0.028;
         return {
             verdict: response.verdict || 'APPROPRIATE',
-            confidence: response.confidence || 0.5,
+            confidence: Number(response.confidence) || 0.5,
             currentModel: {
                 modelId: call.modelId,
-                provider: call.provider,
-                estimatedCostPer1k: response.current_cost || this.estimateCost(call.modelId),
-                latencyTier: response.current_latency_tier || 'medium'
+                provider: serverCurrentModel.provider || call.provider || 'openai',
+                estimatedCostPer1k: currentCost,
+                latencyTier: serverCurrentModel.latencyTier || response.current_latency_tier || 'medium'
             },
-            recommendedAlternative: response.recommended_alternative ? {
-                modelId: response.recommended_alternative.model_id,
-                provider: response.recommended_alternative.provider,
-                estimatedCostPer1k: response.recommended_alternative.cost,
-                latencyTier: response.recommended_alternative.latency_tier
+            recommendedAlternative: serverAlt ? {
+                modelId: serverAlt.modelId || serverAlt.model_id || 'unknown',
+                provider: serverAlt.provider || 'unknown',
+                estimatedCostPer1k: Number(serverAlt.estimatedCostPer1k) || Number(serverAlt.cost) || 0.1,
+                latencyTier: serverAlt.latencyTier || serverAlt.latency_tier || 'fast'
             } : null,
-            costSavingsPercent: response.cost_savings_percent || 0,
-            latencySavingsMs: response.latency_savings_ms || 0,
-            currentCarbonGrams: response.carbonFactor ? (response.carbonFactor * 0.028) : 0.028,
-            alternativeCarbonGrams: response.recommended_alternative ? 0.015 : null,
-            carbonSavingsPercent: response.recommended_alternative ? 46 : 0,
-            reasoning: response.reasoning || '',
+            costSavingsPercent: Number(response.costSavingsPercent) || Number(response.cost_savings_percent) || 0,
+            latencySavingsMs: Number(response.latencySavingsMs) || Number(response.latency_savings_ms) || 0,
+            currentCarbonGrams: carbonGrams,
+            alternativeCarbonGrams: serverAlt ? (carbonGrams * 0.5) : null,
+            carbonSavingsPercent: serverAlt ? 50 : 0,
+            reasoning: response.reasoning || response.summary || '',
             lineNumber: call.lineNumber,
             rawCode: call.rawCallCode
         };
+    }
+    /**
+     * Get default cost estimate for a model (synchronous fallback)
+     */
+    getDefaultCost(modelId) {
+        const costs = {
+            'gpt-4': 30.0,
+            'gpt-4o': 5.0,
+            'gpt-4o-mini': 0.15,
+            'gpt-3.5-turbo': 0.5,
+            'claude-3-opus': 15.0,
+            'claude-3-5-sonnet': 3.0,
+            'claude-3-haiku': 0.25,
+            'gemini-1.5-pro': 3.5,
+            'gemini-1.5-flash': 0.35,
+        };
+        const lowerModel = modelId.toLowerCase();
+        for (const [key, cost] of Object.entries(costs)) {
+            if (lowerModel.includes(key.toLowerCase())) {
+                return cost;
+            }
+        }
+        return 1.0; // Default fallback
     }
     /**
      * Suggest a cheaper alternative by querying the backend
