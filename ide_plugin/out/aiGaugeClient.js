@@ -21,19 +21,8 @@ class AIGaugeClient {
      * Analyze a detected LLM call
      */
     async analyze(call) {
-        try {
-            // Priority: Ollama (local) > Server
-            if (this.config.useOllamaDirect) {
-                return await this.analyzeWithOllama(call);
-            }
-            else {
-                return await this.analyzeWithServer(call);
-            }
-        }
-        catch (error) {
-            console.warn('AI-Gauge analysis failed, using fallback:', error);
-            return this.fallbackAnalysis(call);
-        }
+        console.log('AI-Gauge: Analyzing call with server mode');
+        return await this.analyzeWithServer(call);
     }
     /**
      * Analyze using the inference server (recommended)
@@ -50,87 +39,6 @@ class AIGaugeClient {
         }
         const result = await response.json();
         return this.parseResponse(result, call);
-    }
-    /**
-     * Analyze by calling Ollama directly (no inference server needed)
-     */
-    async analyzeWithOllama(call) {
-        const prompt = this.buildOllamaPrompt(call);
-        const response = await fetch(`${this.config.ollamaUrl}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: this.config.ollamaModel,
-                prompt: prompt,
-                stream: false,
-                options: {
-                    temperature: 0.1,
-                    num_predict: 512
-                }
-            })
-        });
-        if (!response.ok) {
-            throw new Error(`Ollama returned ${response.status}`);
-        }
-        const result = await response.json();
-        return this.parseOllamaResponse(result.response, call);
-    }
-    /**
-     * Build prompt for direct Ollama analysis
-     */
-    buildOllamaPrompt(call) {
-        return `Analyze this LLM API call and determine if the model choice is appropriate:
-
-Model: ${call.modelId}
-Provider: ${call.provider}
-Has Tools: ${call.hasTools}
-Tool Count: ${call.toolCount}
-Has Structured Output: ${call.hasStructuredOutput}
-Code Context: ${call.surroundingCode.substring(0, 500)}
-
-Return a JSON object with:
-- is_model_appropriate: true/false
-- minimum_capable_tier: one of [budget, standard, premium, frontier]
-- actual_complexity: one of [trivial, simple, moderate, complex, expert]
-- appropriateness_reasoning: brief explanation`;
-    }
-    /**
-     * Parse Ollama's raw response
-     */
-    parseOllamaResponse(responseText, call) {
-        let analysis = {};
-        // Try to extract JSON from response
-        try {
-            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                analysis = JSON.parse(jsonMatch[0]);
-            }
-        }
-        catch {
-            // Fall back to defaults
-        }
-        const isAppropriate = analysis.is_model_appropriate !== false;
-        return {
-            verdict: isAppropriate ? 'APPROPRIATE' : 'OVERKILL',
-            confidence: 0.85,
-            currentModel: {
-                modelId: call.modelId,
-                provider: call.provider,
-                estimatedCostPer1k: this.estimateCost(call.modelId),
-                latencyTier: this.estimateLatencyTier(call.modelId)
-            },
-            recommendedAlternative: !isAppropriate ? {
-                modelId: this.suggestAlternative(call),
-                provider: call.provider,
-                estimatedCostPer1k: 0.15,
-                latencyTier: 'fast'
-            } : null,
-            costSavingsPercent: !isAppropriate ? 80 : 0,
-            latencySavingsMs: !isAppropriate ? 500 : 0,
-            reasoning: analysis.appropriateness_reasoning || 'Analysis complete',
-            lineNumber: call.lineNumber,
-            rawCode: call.rawCallCode
-        };
     }
     /**
      * Build the analysis payload in the format expected by the model
@@ -154,75 +62,81 @@ Return a JSON object with:
      * Parse the model's response into AnalysisResult
      */
     parseResponse(response, call) {
+        // Server returns camelCase (currentModel) - handle both formats
+        const serverCurrentModel = response.currentModel || {};
+        const serverAlt = response.recommendedAlternative || response.recommended_alternative;
+        // Get cost from server response, fallback to defaults
+        const currentCost = Number(serverCurrentModel.estimatedCostPer1k) ||
+            Number(response.current_cost) ||
+            this.getDefaultCost(call.modelId);
+        const carbonFactor = Number(response.carbonFactor) || 1.0;
+        const carbonGrams = currentCost > 0 ? (carbonFactor * currentCost * 0.001) : 0.028;
         return {
             verdict: response.verdict || 'APPROPRIATE',
-            confidence: response.confidence || 0.5,
+            confidence: Number(response.confidence) || 0.5,
             currentModel: {
                 modelId: call.modelId,
-                provider: call.provider,
-                estimatedCostPer1k: response.current_cost || this.estimateCost(call.modelId),
-                latencyTier: response.current_latency_tier || 'medium'
+                provider: serverCurrentModel.provider || call.provider || 'openai',
+                estimatedCostPer1k: currentCost,
+                latencyTier: serverCurrentModel.latencyTier || response.current_latency_tier || 'medium'
             },
-            recommendedAlternative: response.recommended_alternative ? {
-                modelId: response.recommended_alternative.model_id,
-                provider: response.recommended_alternative.provider,
-                estimatedCostPer1k: response.recommended_alternative.cost,
-                latencyTier: response.recommended_alternative.latency_tier
+            recommendedAlternative: serverAlt ? {
+                modelId: serverAlt.modelId || serverAlt.model_id || 'unknown',
+                provider: serverAlt.provider || 'unknown',
+                estimatedCostPer1k: Number(serverAlt.estimatedCostPer1k) || Number(serverAlt.cost) || 0.1,
+                latencyTier: serverAlt.latencyTier || serverAlt.latency_tier || 'fast'
             } : null,
-            costSavingsPercent: response.cost_savings_percent || 0,
-            latencySavingsMs: response.latency_savings_ms || 0,
-            reasoning: response.reasoning || '',
+            costSavingsPercent: Number(response.costSavingsPercent) || Number(response.cost_savings_percent) || 0,
+            latencySavingsMs: Number(response.latencySavingsMs) || Number(response.latency_savings_ms) || 0,
+            currentCarbonGrams: carbonGrams,
+            alternativeCarbonGrams: serverAlt ? (carbonGrams * 0.5) : null,
+            carbonSavingsPercent: serverAlt ? 50 : 0,
+            reasoning: response.reasoning || response.summary || '',
             lineNumber: call.lineNumber,
             rawCode: call.rawCallCode
         };
     }
     /**
-     * Fallback rule-based analysis when server is unavailable
+     * Get default cost estimate for a model (synchronous fallback)
      */
-    fallbackAnalysis(call) {
-        const isOverkill = this.isLikelyOverkill(call);
-        return {
-            verdict: isOverkill ? 'OVERKILL' : 'APPROPRIATE',
-            confidence: 0.6, // Lower confidence for rule-based
-            currentModel: {
-                modelId: call.modelId,
-                provider: call.provider,
-                estimatedCostPer1k: this.estimateCost(call.modelId),
-                latencyTier: this.estimateLatencyTier(call.modelId)
-            },
-            recommendedAlternative: isOverkill ? {
-                modelId: this.suggestAlternative(call),
-                provider: call.provider,
-                estimatedCostPer1k: 0.15, // Estimate for cheaper model
-                latencyTier: 'fast'
-            } : null,
-            costSavingsPercent: isOverkill ? 80 : 0,
-            latencySavingsMs: isOverkill ? 500 : 0,
-            reasoning: isOverkill
-                ? 'Task appears simple and may not require a frontier model'
-                : 'Model selection appears appropriate for the task',
-            lineNumber: call.lineNumber,
-            rawCode: call.rawCallCode
+    getDefaultCost(modelId) {
+        const costs = {
+            'gpt-4': 30.0,
+            'gpt-4o': 5.0,
+            'gpt-4o-mini': 0.15,
+            'gpt-3.5-turbo': 0.5,
+            'claude-3-opus': 15.0,
+            'claude-3-5-sonnet': 3.0,
+            'claude-3-haiku': 0.25,
+            'gemini-1.5-pro': 3.5,
+            'gemini-1.5-flash': 0.35,
         };
+        const lowerModel = modelId.toLowerCase();
+        for (const [key, cost] of Object.entries(costs)) {
+            if (lowerModel.includes(key.toLowerCase())) {
+                return cost;
+            }
+        }
+        return 1.0; // Default fallback
     }
     /**
-     * Simple heuristic to detect likely overkill
+     * Suggest a cheaper alternative by querying the backend
      */
-    isLikelyOverkill(call) {
-        const frontierModels = [
-            'gpt-4o', 'gpt-4-turbo', 'gpt-4',
-            'claude-3-opus', 'claude-3-5-sonnet',
-            'gemini-1.5-pro', 'gemini-ultra'
-        ];
-        const isFrontierModel = frontierModels.some(m => call.modelId.toLowerCase().includes(m.toLowerCase()));
-        // Frontier model with no tools, no structured output = likely overkill
-        const isSimpleTask = !call.hasTools && !call.hasStructuredOutput;
-        return isFrontierModel && isSimpleTask;
-    }
-    /**
-     * Suggest a cheaper alternative model
-     */
-    suggestAlternative(call) {
+    async suggestAlternative(call) {
+        try {
+            const response = await fetch(`${this.config.serverUrl}/models/${encodeURIComponent(call.modelId)}/alternatives`);
+            if (response.ok) {
+                const data = await response.json();
+                const alternatives = data.alternatives || [];
+                if (alternatives.length > 0) {
+                    return alternatives[0].model_id;
+                }
+            }
+        }
+        catch (error) {
+            console.warn('Failed to get model alternatives from backend:', error);
+        }
+        // Fallback alternatives
         const alternatives = {
             'gpt-4o': 'gpt-4o-mini',
             'gpt-4': 'gpt-3.5-turbo',
@@ -238,39 +152,82 @@ Return a JSON object with:
         return 'gpt-4o-mini'; // Default suggestion
     }
     /**
-     * Estimate cost per 1k tokens for a model
+     * Estimate cost per 1k tokens by querying the backend
      */
-    estimateCost(modelId) {
-        const costs = {
-            'gpt-4o': 5.0,
-            'gpt-4o-mini': 0.15,
-            'gpt-4-turbo': 10.0,
-            'gpt-3.5-turbo': 0.5,
-            'claude-3-opus': 15.0,
-            'claude-3-sonnet': 3.0,
-            'claude-3-haiku': 0.25,
-            'gemini-1.5-pro': 3.5,
-            'gemini-1.5-flash': 0.075,
-        };
-        for (const [model, cost] of Object.entries(costs)) {
-            if (modelId.toLowerCase().includes(model.toLowerCase())) {
-                return cost;
+    async estimateCost(modelId) {
+        try {
+            const response = await fetch(`${this.config.serverUrl}/models/${encodeURIComponent(modelId)}/cost`);
+            if (response.ok) {
+                const data = await response.json();
+                return data.estimated_cost_per_1k || 1.0;
             }
         }
-        return 1.0; // Default
+        catch (error) {
+            console.warn('Failed to get model cost from backend:', error);
+        }
+        return 1.0; // Fallback
     }
     /**
-     * Estimate latency tier for a model
+     * Estimate latency tier by querying the backend
      */
-    estimateLatencyTier(modelId) {
-        const slowModels = ['opus', 'gpt-4-turbo', 'gemini-ultra'];
-        const fastModels = ['mini', 'flash', 'haiku', '3.5-turbo'];
-        const modelLower = modelId.toLowerCase();
-        if (slowModels.some(m => modelLower.includes(m)))
-            return 'slow';
-        if (fastModels.some(m => modelLower.includes(m)))
-            return 'fast';
-        return 'medium';
+    async estimateLatencyTier(modelId) {
+        try {
+            const response = await fetch(`${this.config.serverUrl}/models/${encodeURIComponent(modelId)}`);
+            if (response.ok) {
+                const data = await response.json();
+                return data.latency_tier || 'medium';
+            }
+        }
+        catch (error) {
+            console.warn('Failed to get model latency from backend:', error);
+        }
+        return 'medium'; // Fallback
+    }
+    /**
+     * Get the tier of a model by querying the backend
+     */
+    async getModelTier(modelId) {
+        try {
+            const response = await fetch(`${this.config.serverUrl}/models/${encodeURIComponent(modelId)}/tier`);
+            if (response.ok) {
+                const data = await response.json();
+                return data.tier || 'standard';
+            }
+        }
+        catch (error) {
+            console.warn('Failed to get model tier from backend:', error);
+        }
+        return 'standard'; // Fallback
+    }
+    /**
+     * Calculate latency savings based on tier differences
+     */
+    calculateLatencySavings(currentLatency, alternativeLatency) {
+        if (!alternativeLatency)
+            return 0;
+        const latencyValues = {
+            'ultra-fast': 100,
+            'fast': 200,
+            'medium': 400,
+            'slow': 1000
+        };
+        const current = latencyValues[currentLatency] || 400;
+        const alternative = latencyValues[alternativeLatency] || 200;
+        return Math.max(0, current - alternative);
+    }
+    /**
+     * Check if model is overkill based on tier comparison
+     */
+    isModelOverkill(currentModelTier, minimumRequiredTier) {
+        const tierRankings = {
+            'budget': 1,
+            'standard': 2,
+            'premium': 3,
+            'frontier': 4
+        };
+        const currentRank = tierRankings[currentModelTier] || 2;
+        const requiredRank = tierRankings[minimumRequiredTier] || 2;
+        return currentRank > requiredRank;
     }
 }
 exports.AIGaugeClient = AIGaugeClient;

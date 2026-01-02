@@ -22,9 +22,9 @@ load_dotenv()
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.decision_module import analyze_llm_call
-from src.model_cards import get_model_card, MODEL_CARDS, TIER_RANKINGS
-from src.local_inference import get_model_info as get_local_model_info
+from decision_module import analyze_llm_call
+from model_cards import get_model_card, MODEL_CARDS, TIER_RANKINGS
+from local_inference import get_model_info as get_local_model_info
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for VS Code extension
@@ -37,7 +37,7 @@ HOST = os.getenv('AI_GAUGE_HOST', '127.0.0.1')
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint with backend status."""
-    model_info = get_model_info()
+    model_info = get_local_model_info()
     return jsonify({
         'status': 'ok',
         'version': '0.2.0',
@@ -86,7 +86,7 @@ def analyze():
         # Run analysis with local model
         result = analyze_llm_call(
             model=model_used,
-            prompt=code_snippet[:500],  # Use code snippet as proxy for prompt
+            prompt=code_snippet[:2000],  # Use code snippet as proxy for prompt (increased for complex prompts)
             system_prompt="",
             context={
                 "type": "api_call",
@@ -195,6 +195,33 @@ def get_model_info(model_id: str):
     })
 
 
+@app.route('/models/<model_id>/cost', methods=['GET'])
+def get_model_cost(model_id: str):
+    """Get cost information for a specific model."""
+    card = get_model_card(model_id)
+    if not card:
+        # Return default costs for unknown models
+        return jsonify({
+            'model_id': model_id,
+            'estimated_cost_per_1k': 1.0,
+            'input_cost_per_1m': 1.0,
+            'output_cost_per_1m': 2.0,
+            'carbon_factor': 1.0
+        })
+    
+    # Calculate estimated cost per 1k tokens (average of input/output)
+    avg_cost_per_1m = (card.input_cost_per_1m + card.output_cost_per_1m) / 2
+    cost_per_1k = avg_cost_per_1m / 1000  # Convert from per-1M to per-1K
+    
+    return jsonify({
+        'model_id': card.model_id,
+        'estimated_cost_per_1k': cost_per_1k,
+        'input_cost_per_1m': card.input_cost_per_1m,
+        'output_cost_per_1m': card.output_cost_per_1m,
+        'carbon_factor': card.carbon_factor
+    })
+
+
 @app.route('/models/<model_id>/alternatives', methods=['GET'])
 def get_model_alternatives(model_id: str):
     """Get cheaper alternative models for a given model."""
@@ -248,33 +275,6 @@ def get_model_tier(model_id: str):
         'model_id': card.model_id,
         'tier': card.tier,
         'tier_rank': TIER_RANKINGS.get(card.tier.lower(), 2)
-    })
-
-
-@app.route('/models/<model_id>/cost', methods=['GET'])
-def get_model_cost(model_id: str):
-    """Get cost information for a specific model."""
-    card = get_model_card(model_id)
-    if not card:
-        # Return default costs for unknown models
-        return jsonify({
-            'model_id': model_id,
-            'estimated_cost_per_1k': 1.0,
-            'input_cost_per_1m': 1.0,
-            'output_cost_per_1m': 2.0,
-            'carbon_factor': 1.0
-        })
-    
-    # Calculate estimated cost per 1k tokens (average of input/output)
-    avg_cost_per_1m = (card.input_cost_per_1m + card.output_cost_per_1m) / 2
-    cost_per_1k = avg_cost_per_1m / 1000  # Convert from per-1M to per-1K
-    
-    return jsonify({
-        'model_id': card.model_id,
-        'estimated_cost_per_1k': cost_per_1k,
-        'input_cost_per_1m': card.input_cost_per_1m,
-        'output_cost_per_1m': card.output_cost_per_1m,
-        'carbon_factor': card.carbon_factor
     })
 
 

@@ -19,19 +19,201 @@ let inlineHintsProvider: InlineHintsProvider;
 let detector: LLMCallDetector;
 let client: AIGaugeClient;
 let statusBarItem: vscode.StatusBarItem;
+let inferenceServerProcess: cp.ChildProcess | undefined;
+let repoPath: string | undefined;
 
 function getClientConfig(): ClientConfig {
     const config = vscode.workspace.getConfiguration('aiGauge');
     return {
         serverUrl: config.get('modelServerUrl') || 'http://localhost:8080',
-        useOllamaDirect: config.get('useOllamaDirect') || false,
-        ollamaUrl: config.get('ollamaUrl') || 'http://localhost:11434',
-        ollamaModel: config.get('ollamaModel') || 'ai-gauge'
+        useOllamaDirect: false,  // Always use server mode
+        ollamaUrl: 'http://localhost:11434',  // Not used in server mode
+        ollamaModel: 'ai-gauge'  // Not used in server mode
     };
+}
+
+/**
+ * Detect AI-Gauge repository path with smart prioritization
+ */
+function detectRepoPath(): string | undefined {
+    console.log('AI-Gauge: Starting repository detection...');
+
+    // PRIORITY 1: Check current workspace for runtime packages (most important)
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+        console.log('AI-Gauge: Checking current workspace for runtime packages...');
+        for (const folder of vscode.workspace.workspaceFolders) {
+            const workspacePath = folder.uri.fsPath;
+            console.log('AI-Gauge: Checking workspace path:', workspacePath);
+
+            // Check if workspace itself is a runtime package
+            if (isRuntimePackage(workspacePath)) {
+                console.log('AI-Gauge: ✅ Found runtime package in current workspace:', workspacePath);
+                return workspacePath;
+            }
+
+            // Check for runtime package in common subdirectories
+            const runtimeSubPath = path.join(workspacePath, 'runtime');
+            if (isRuntimePackage(runtimeSubPath)) {
+                console.log('AI-Gauge: ✅ Found runtime package in workspace runtime/ subdirectory:', runtimeSubPath);
+                return runtimeSubPath;
+            }
+        }
+        console.log('AI-Gauge: No runtime package found in current workspace');
+    } else {
+        console.log('AI-Gauge: No workspace folders found');
+    }
+
+    // PRIORITY 2: Check current workspace for any valid repo (fallback)
+    if (vscode.workspace.workspaceFolders) {
+        console.log('AI-Gauge: Checking current workspace for any valid repo...');
+        for (const folder of vscode.workspace.workspaceFolders) {
+            const workspacePath = folder.uri.fsPath;
+
+            // Check if workspace itself is a valid repo
+            if (isValidRepo(workspacePath)) {
+                console.log('AI-Gauge: Found repository in current workspace:', workspacePath);
+                return workspacePath;
+            }
+
+            // Check for valid repo in common subdirectories
+            const runtimeSubPath = path.join(workspacePath, 'runtime');
+            if (isValidRepo(runtimeSubPath)) {
+                console.log('AI-Gauge: Found repository in workspace runtime/ subdirectory:', runtimeSubPath);
+                return runtimeSubPath;
+            }
+        }
+    }
+
+    // PRIORITY 3: Only check common locations as last resort
+    console.log('AI-Gauge: Checking common locations as last resort...');
+    const possiblePaths = [
+        path.join(os.homedir(), 'ai-gauge'),
+        path.join(os.homedir(), 'AI-Gauge'),
+        path.join(os.homedir(), 'Desktop', 'ai-gauge'),
+        path.join(os.homedir(), 'Desktop', 'AI-Gauge'),
+        path.join(os.homedir(), 'Documents', 'ai-gauge'),
+        path.join(os.homedir(), 'Documents', 'AI-Gauge')
+    ];
+
+    // Check common locations for runtime packages first
+    for (const repoPath of possiblePaths) {
+        if (isRuntimePackage(repoPath)) {
+            console.log('AI-Gauge: Found runtime package at common location:', repoPath);
+            return repoPath;
+        }
+    }
+
+    // Then check for any valid repo
+    for (const repoPath of possiblePaths) {
+        if (isValidRepo(repoPath)) {
+            console.log('AI-Gauge: Found repository at common location:', repoPath);
+            return repoPath;
+        }
+    }
+
+    console.log('AI-Gauge: No valid repository found anywhere');
+    return undefined;
+}
+
+/**
+ * Check if path contains valid AI-Gauge repository or runtime package
+ */
+function isRuntimePackage(repoPath: string): boolean {
+    try {
+        const fs = require('fs');
+
+        // Check for runtime package structure (files directly in root)
+        const serverPath = path.join(repoPath, 'inference_server.py');
+        const requirementsPath = path.join(repoPath, 'requirements.txt');
+        if (fs.existsSync(serverPath) && fs.existsSync(requirementsPath)) {
+            return true;
+        }
+
+        // Check for full repository structure (files in runtime/ subdirectory)
+        const runtimeServerPath = path.join(repoPath, 'runtime', 'inference_server.py');
+        const runtimeRequirementsPath = path.join(repoPath, 'runtime', 'requirements.txt');
+        if (fs.existsSync(runtimeServerPath) && fs.existsSync(runtimeRequirementsPath)) {
+            return true;
+        }
+
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Check if path contains valid AI-Gauge repository or runtime package
+ */
+function isValidRepo(repoPath: string): boolean {
+    try {
+        const fs = require('fs');
+
+        // Check for runtime package structure (files directly in root)
+        const runtimeServerPath = path.join(repoPath, 'inference_server.py');
+        const runtimeRequirementsPath = path.join(repoPath, 'requirements.txt');
+        if (fs.existsSync(runtimeServerPath) && fs.existsSync(runtimeRequirementsPath)) {
+            return true;
+        }
+
+        // Check for full repository structure (files in runtime/ subdirectory)
+        const fullRepoServerPath = path.join(repoPath, 'runtime', 'inference_server.py');
+        const fullRepoRequirementsPath = path.join(repoPath, 'runtime', 'requirements.txt');
+        if (fs.existsSync(fullRepoServerPath) && fs.existsSync(fullRepoRequirementsPath)) {
+            return true;
+        }
+
+        // Check for development repository structure (legacy)
+        const serverPath = path.join(repoPath, 'src', 'inference_server.py');
+        const requirementsPath = path.join(repoPath, 'requirements.txt');
+        return fs.existsSync(serverPath) && fs.existsSync(requirementsPath);
+    } catch {
+        return false;
+    }
 }
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('AI-Gauge extension activated');
+
+    // Detect repository path
+    repoPath = detectRepoPath();
+    if (!repoPath) {
+        console.log('AI-Gauge: No repository found - showing setup instructions');
+
+        const setupMessage = `AI-Gauge Setup Required
+
+To use AI-Gauge in this workspace:
+
+1. Download the runtime package:
+   https://github.com/ajayvenki2910/ai-gauge/releases/latest
+
+2. Extract it to your workspace folder
+
+3. Run: ./setup.sh
+
+4. Reload VS Code window
+
+The extension will then automatically detect and use the runtime package.`;
+
+        vscode.window.showErrorMessage(
+            'AI-Gauge runtime package not found in current workspace.',
+            'Show Setup Instructions'
+        ).then(selection => {
+            if (selection === 'Show Setup Instructions') {
+                vscode.window.showInformationMessage(setupMessage, { modal: true });
+            }
+        });
+        return;
+    }
+
+    console.log('AI-Gauge: Repository found at', repoPath);
+
+    // Create status bar item
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem.text = "$(graph-line) AI-Gauge";
+    statusBarItem.tooltip = "AI-Gauge is analyzing your LLM calls";
+    statusBarItem.show();
+    context.subscriptions.push(statusBarItem);
 
     // Initialize status bar
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -107,21 +289,71 @@ export async function activate(context: vscode.ExtensionContext) {
  * Perform automatic setup of dependencies
  */
 async function performAutoSetup(context: vscode.ExtensionContext): Promise<boolean> {
+    const currentVersion = context.extension.packageJSON.version;
     const setupState = context.globalState.get('aiGauge.setupComplete', false);
 
     if (setupState) {
         // Quick check if everything is still working
         const healthCheck = await checkDependenciesHealth();
         if (healthCheck.healthy) {
+            // Still need to ensure server is running!
+            console.log('AI-Gauge: Dependencies healthy, ensuring server is running...');
+            const serverRunning = await checkServerHealth();
+            if (!serverRunning) {
+                console.log('AI-Gauge: Server not running, starting it now...');
+                const serverStarted = await ensureInferenceServer(context);
+                if (!serverStarted) {
+                    console.error('AI-Gauge: Failed to start server');
+                    statusBarItem.text = "$(error) AI-Gauge: Server Error";
+                    statusBarItem.tooltip = "Server failed to start. Click to troubleshoot.";
+                    return false;
+                }
+            }
+            console.log('AI-Gauge: Server is running');
+            statusBarItem.text = "$(check) AI-Gauge: Active";
+            statusBarItem.tooltip = "AI-Gauge is analyzing your LLM calls for cost optimization";
             return true;
         }
     }
 
     // Perform full setup check
-    const dependencies = await checkDependencies();
+    const dependencies = await checkDependencies(context);
+    console.log('AI-Gauge: Dependencies check:', JSON.stringify(dependencies));
 
-    if (dependencies.ollamaInstalled && dependencies.modelExists && dependencies.pythonReady) {
+    // If all prerequisites are met (Ollama, model, Python, server files exist), try to start the server
+    if (dependencies.ollamaInstalled && dependencies.modelExists && dependencies.pythonReady && dependencies.serverAvailable) {
         context.globalState.update('aiGauge.setupComplete', true);
+        
+        // Start server if not already running
+        if (!dependencies.serverRunning) {
+            console.log('AI-Gauge: Server not running, starting it now...');
+            const serverStarted = await ensureInferenceServer(context);
+            if (!serverStarted) {
+                vscode.window.showErrorMessage(
+                    'AI-Gauge server failed to start. Please check that the runtime package is properly set up.',
+                    'Troubleshoot'
+                ).then(selection => {
+                    if (selection === 'Troubleshoot') {
+                        vscode.window.showInformationMessage(
+                            'Troubleshooting Steps:\n\n' +
+                            '1. Ensure runtime package is extracted in current workspace\n' +
+                            '2. Run: ./setup.sh in the runtime package folder\n' +
+                            '3. Check VS Code output panel for detailed error messages\n' +
+                            '4. Verify Ollama is running: ollama list\n' +
+                            '5. Reload VS Code window',
+                            { modal: true }
+                        );
+                    }
+                });
+                statusBarItem.text = "$(error) AI-Gauge: Server Error";
+                statusBarItem.tooltip = "Click to troubleshoot server issues";
+                return false;
+            }
+        } else {
+            console.log('AI-Gauge: Server already running');
+        }
+        statusBarItem.text = "$(check) AI-Gauge: Active";
+        statusBarItem.tooltip = "AI-Gauge is analyzing your LLM calls for cost optimization";
         return true;
     }
 
@@ -140,7 +372,7 @@ async function performAutoSetup(context: vscode.ExtensionContext): Promise<boole
     }
 
     // Perform auto-setup
-    const success = await runAutoSetup(dependencies);
+    const success = await runAutoSetup(context, dependencies, currentVersion);
     if (success) {
         context.globalState.update('aiGauge.setupComplete', true);
         vscode.window.showInformationMessage('AI-Gauge setup complete! You can now analyze your LLM calls.');
@@ -179,26 +411,32 @@ async function checkDependenciesHealth(): Promise<{ healthy: boolean; details: s
 /**
  * Check all dependencies
  */
-async function checkDependencies(): Promise<{
+async function checkDependencies(context: vscode.ExtensionContext): Promise<{
     ollamaInstalled: boolean;
     modelExists: boolean;
     pythonReady: boolean;
+    serverAvailable: boolean;
+    serverRunning: boolean;
 }> {
     const ollamaInstalled = await checkOllamaInstalled();
     const modelExists = ollamaInstalled ? await checkModelExists() : false;
     const pythonReady = await checkPythonEnvironment();
+    const serverAvailable = await checkServerAvailable(context);
+    const serverRunning = pythonReady && serverAvailable ? await checkServerHealth() : false;
 
-    return { ollamaInstalled, modelExists, pythonReady };
+    return { ollamaInstalled, modelExists, pythonReady, serverAvailable, serverRunning };
 }
 
 /**
  * Run the automatic setup process
  */
-async function runAutoSetup(dependencies: {
+async function runAutoSetup(context: vscode.ExtensionContext, dependencies: {
     ollamaInstalled: boolean;
     modelExists: boolean;
     pythonReady: boolean;
-}): Promise<boolean> {
+    serverAvailable: boolean;
+    serverRunning: boolean;
+}, currentVersion: string): Promise<boolean> {
     return await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: 'Setting up AI-Gauge',
@@ -206,7 +444,14 @@ async function runAutoSetup(dependencies: {
     }, async (progress, token) => {
         try {
             let step = 0;
-            const totalSteps = 3;
+            let totalSteps = 0;
+            
+            // Count total steps needed
+            if (!dependencies.ollamaInstalled) totalSteps++;
+            totalSteps++; // Always start Ollama service
+            if (!dependencies.modelExists) totalSteps++;
+            if (!dependencies.pythonReady) totalSteps++;
+            totalSteps++; // Always start server
 
             // Step 1: Install Ollama if needed
             if (!dependencies.ollamaInstalled) {
@@ -239,21 +484,36 @@ async function runAutoSetup(dependencies: {
                 if (!modelSuccess) {
                     throw new Error('Failed to download AI-Gauge model');
                 }
+                step++;
             }
-            step++;
 
             // Step 4: Setup Python environment
             if (!dependencies.pythonReady) {
-                progress.report({ message: 'Setting up Python environment...', increment: (100 / totalSteps) * step });
+                progress.report({ message: 'Setting up Python environment...', increment: (step / totalSteps) * 100 });
                 if (token.isCancellationRequested) return false;
 
-                const pythonSuccess = await setupPythonEnvironment();
+                const pythonSuccess = await setupPythonEnvironment(context, currentVersion);
                 if (!pythonSuccess) {
                     throw new Error('Failed to setup Python environment');
                 }
+                step++;
             }
 
+            // Step 5: Start inference server
+            progress.report({ message: 'Starting inference server...', increment: (step / totalSteps) * 100 });
+            if (token.isCancellationRequested) return false;
+
+            const serverSuccess = await startInferenceServer(context);
+            if (!serverSuccess) {
+                throw new Error('Failed to start inference server');
+            }
+            step++;
+
             progress.report({ message: 'Setup complete!', increment: 100 });
+            
+            // Mark version as installed
+            context.globalState.update('aiGauge.installedVersion', currentVersion);
+            
             return true;
 
         } catch (error) {
@@ -383,13 +643,43 @@ async function pullAIGaugeModel(): Promise<boolean> {
 /**
  * Setup Python environment
  */
-async function setupPythonEnvironment(): Promise<boolean> {
-    // For now, just check if pip is available
-    // In a full implementation, this could install requirements.txt
+async function setupPythonEnvironment(context: vscode.ExtensionContext, currentVersion: string): Promise<boolean> {
     return new Promise((resolve) => {
-        cp.exec('python3 -m pip --version', (error) => {
-            resolve(!error);
-        });
+        if (!repoPath) {
+            console.error('AI-Gauge: Repository path not found for Python setup');
+            resolve(false);
+            return;
+        }
+
+        const requirementsPath = path.join(repoPath, 'requirements.txt');
+        const fs = require('fs');
+
+        if (fs.existsSync(requirementsPath)) {
+            console.log('AI-Gauge: Installing Python requirements from', requirementsPath);
+            cp.exec(`python3 -m pip install -r "${requirementsPath}"`, { cwd: repoPath }, (error, stdout, stderr) => {
+                if (error) {
+                    console.error('AI-Gauge: Failed to install Python requirements:', error);
+                    console.error('AI-Gauge: stderr:', stderr);
+                    resolve(false);
+                } else {
+                    console.log('AI-Gauge: Python requirements installed successfully');
+                    console.log('AI-Gauge: pip output:', stdout);
+                    resolve(true);
+                }
+            });
+        } else {
+            console.log('AI-Gauge: No requirements.txt found, checking pip availability');
+            // Just check if pip is available
+            cp.exec('python3 -m pip --version', (error, stdout) => {
+                if (error) {
+                    console.error('AI-Gauge: pip not available:', error);
+                    resolve(false);
+                } else {
+                    console.log('AI-Gauge: pip available:', stdout.trim());
+                    resolve(true);
+                }
+            });
+        }
     });
 }
 
@@ -552,6 +842,232 @@ function debounce<T extends (...args: unknown[]) => unknown>(func: T, wait: numb
     }) as T;
 }
 
+/**
+ * Check if inference server code is available (bundled with extension)
+ */
+async function checkServerAvailable(context: vscode.ExtensionContext): Promise<boolean> {
+    try {
+        if (!repoPath) return false;
+        const fs = require('fs');
+
+        // Check all possible locations for inference_server.py
+        const possiblePaths = [
+            path.join(repoPath, 'inference_server.py'),           // Root (flat runtime package)
+            path.join(repoPath, 'runtime', 'inference_server.py'), // runtime/ subdirectory
+            path.join(repoPath, 'src', 'inference_server.py'),     // src/ (dev repo)
+        ];
+
+        for (const serverPath of possiblePaths) {
+            if (fs.existsSync(serverPath)) {
+                console.log('AI-Gauge: Server found at:', serverPath);
+                return true;
+            }
+        }
+
+        console.log('AI-Gauge: Server not found in any expected location');
+        return false;
+    } catch (error) {
+        console.log('AI-Gauge: Server availability check failed:', error);
+        return false;
+    }
+}
+
+/**
+ * Check if inference server is healthy
+ */
+async function checkServerHealth(): Promise<boolean> {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch('http://localhost:8080/health', {
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+            const data = await response.json();
+            return data.status === 'ok';
+        }
+        return false;
+    } catch (error) {
+        console.log('Server health check failed:', error);
+        return false;
+    }
+}
+
+/**
+ * Copy directory recursively
+ */
+async function copyDirectory(src: string, dest: string): Promise<void> {
+    const fs = require('fs');
+    const path = require('path');
+    
+    try {
+        if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+        }
+        
+        const entries = fs.readdirSync(src, { withFileTypes: true });
+        
+        for (const entry of entries) {
+            const srcPath = path.join(src, entry.name);
+            const destPath = path.join(dest, entry.name);
+            
+            if (entry.isDirectory()) {
+                await copyDirectory(srcPath, destPath);
+            } else {
+                fs.copyFileSync(srcPath, destPath);
+            }
+        }
+    } catch (error) {
+        console.error(`Failed to copy directory from ${src} to ${dest}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Start the inference server
+ */
+async function startInferenceServer(context: vscode.ExtensionContext): Promise<boolean> {
+    return new Promise(async (resolve) => {
+        try {
+            if (!repoPath) {
+                console.error('AI-Gauge: Repository path not found');
+                resolve(false);
+                return;
+            }
+
+            const fs = require('fs');
+
+            // Determine the actual runtime directory and server path
+            let runtimeDir: string;
+            let serverPath: string;
+
+            // Check for server in root (flat runtime package)
+            const rootServerPath = path.join(repoPath, 'inference_server.py');
+            // Check for server in runtime/ subdirectory (cloned repo or organized structure)
+            const subfolderServerPath = path.join(repoPath, 'runtime', 'inference_server.py');
+            // Check for server in src/ subdirectory (development repo)
+            const devServerPath = path.join(repoPath, 'src', 'inference_server.py');
+
+            if (fs.existsSync(rootServerPath)) {
+                runtimeDir = repoPath;
+                serverPath = rootServerPath;
+                console.log('AI-Gauge: Found server in root:', serverPath);
+            } else if (fs.existsSync(subfolderServerPath)) {
+                runtimeDir = path.join(repoPath, 'runtime');
+                serverPath = subfolderServerPath;
+                console.log('AI-Gauge: Found server in runtime/ subdirectory:', serverPath);
+            } else if (fs.existsSync(devServerPath)) {
+                runtimeDir = path.join(repoPath, 'src');
+                serverPath = devServerPath;
+                console.log('AI-Gauge: Found server in src/ (dev mode):', serverPath);
+            } else {
+                console.error('AI-Gauge: Could not find inference_server.py in repository');
+                resolve(false);
+                return;
+            }
+
+            // Find Python executable - prefer venv if available
+            let pythonCmd: string = process.platform === 'win32' ? 'python' : 'python3';  // Default fallback
+            
+            // Check for venv in multiple locations - PRIORITIZE runtime dir first (where setup.sh creates it)
+            const venvLocations = [
+                path.join(runtimeDir, 'venv', 'bin', 'python'),        // runtime/venv (setup.sh creates here)
+                path.join(runtimeDir, 'venv', 'Scripts', 'python.exe'), // Windows
+                path.join(repoPath, 'venv', 'bin', 'python'),           // workspace/venv
+                path.join(repoPath, 'venv', 'Scripts', 'python.exe'),  // Windows
+                path.join(runtimeDir, '.venv', 'bin', 'python'),        // runtime/.venv
+                path.join(runtimeDir, '.venv', 'Scripts', 'python.exe'), // Windows
+                path.join(repoPath, '.venv', 'bin', 'python'),         // workspace/.venv
+                path.join(repoPath, '.venv', 'Scripts', 'python.exe'), // Windows
+            ];
+
+            console.log('AI-Gauge: Searching for venv in:', venvLocations.slice(0, 4).join(', '));
+
+            let foundVenv = false;
+            for (const venvPath of venvLocations) {
+                if (fs.existsSync(venvPath)) {
+                    pythonCmd = venvPath;
+                    foundVenv = true;
+                    console.log('AI-Gauge: Using venv Python:', pythonCmd);
+                    break;
+                }
+            }
+
+            if (!foundVenv) {
+                console.log('AI-Gauge: No venv found, using system Python:', pythonCmd);
+            }
+
+            console.log('AI-Gauge: Starting inference server:', pythonCmd, serverPath);
+            console.log('AI-Gauge: Working directory:', runtimeDir);
+
+            inferenceServerProcess = cp.spawn(pythonCmd, [serverPath], {
+                cwd: runtimeDir,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                detached: false
+            });
+
+            // Handle process output
+            inferenceServerProcess.stdout?.on('data', (data) => {
+                console.log('AI-Gauge Server stdout:', data.toString().trim());
+            });
+
+            inferenceServerProcess.stderr?.on('data', (data) => {
+                console.error('AI-Gauge Server stderr:', data.toString().trim());
+            });
+
+            inferenceServerProcess.on('error', (error) => {
+                console.error('AI-Gauge Failed to start server process:', error);
+                resolve(false);
+            });
+
+            inferenceServerProcess.on('exit', (code, signal) => {
+                console.log(`AI-Gauge Server process exited with code ${code}, signal ${signal}`);
+            });
+
+            // Wait for server to be ready
+            setTimeout(async () => {
+                const healthy = await checkServerHealth();
+                if (healthy) {
+                    console.log('AI-Gauge: Inference server started successfully');
+                    resolve(true);
+                } else {
+                    console.error('AI-Gauge: Server started but health check failed');
+                    inferenceServerProcess?.kill();
+                    resolve(false);
+                }
+            }, 5000); // Give time for setup
+
+        } catch (error) {
+            console.error('AI-Gauge: Error starting inference server:', error);
+            resolve(false);
+        }
+    });
+}
+
+/**
+ * Ensure inference server is running
+ */
+async function ensureInferenceServer(context: vscode.ExtensionContext): Promise<boolean> {
+    const healthy = await checkServerHealth();
+    if (healthy) {
+        return true;
+    }
+    
+    console.log('Server not healthy, starting...');
+    return await startInferenceServer(context);
+}
+
 export function deactivate() {
+    // Stop inference server
+    if (inferenceServerProcess) {
+        console.log('Stopping inference server...');
+        inferenceServerProcess.kill();
+        inferenceServerProcess = undefined;
+    }
+    
     diagnosticsProvider?.dispose();
 }

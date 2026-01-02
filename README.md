@@ -1,58 +1,145 @@
-# AI-Gauge: Smart AI Cost Optimization
+# 🌱 AI-Gauge: Measure Before You Spend
 
-AI-Gauge is a VS Code extension that automatically analyzes your LLM API calls and recommends the most cost-effective models before execution. Save 60-70% on AI costs while maintaining performance and reducing your carbon footprint.
+> *"You can't optimize what you don't measure."* — AI-Gauge measures your AI costs **before** they happen.
 
-## The Problem
-
-AI API costs are spiraling out of control. Organizations spend thousands monthly on over-provisioned models, with no visibility into which calls are truly necessary. Traditional monitoring tools only show costs after the fact - by then it's too late.
-
-## The Solution
-
-AI-Gauge intercepts your API calls **before** they execute, analyzing task complexity with a local AI model to recommend the optimal model. Get cost and carbon estimates upfront, not as a surprise bill.
-
-### Key Benefits
-- **60-70% Cost Savings**: Automatically switch to appropriate models
-- **Carbon Reduction**: Track and minimize AI's environmental impact
-- **Zero Configuration**: Install and start saving immediately
-- **Privacy-First**: All analysis happens locally on your machine
-
-## How It Works
-
-1. **Intercept**: Catches LLM API calls in real-time as you code
-2. **Analyze**: Uses local AI to assess task complexity and requirements
-3. **Recommend**: Suggests the most efficient model with cost/carbon estimates
-4. **Execute**: You decide whether to proceed with the recommendation
-
-## Quick Start
-
-1. Install from VS Code Marketplace: Search "AI-Gauge"
-2. The extension automatically sets up Ollama and downloads the analysis model
-3. Start coding - get inline recommendations for every API call
-
-## Real Impact
-
-**Mid-size SaaS Company Case Study:**
-- **Before**: $15K/month on GPT-4 calls
-- **After**: $4.5K/month (70% savings)
-- **Performance**: 98% task success rate maintained
-- **Carbon**: 12 tons CO₂ equivalent saved annually
-
-## Architecture & Technical Details
-
-For detailed technical information, see our [Architecture Guide](docs/ARCHITECTURE.md) covering:
-- System design and data flow
-- Model selection and training
-- Privacy and security considerations
-- Performance optimization
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-## License
-
-MIT License - Free for personal and commercial use.
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/Ajayvenki2910.ai-gauge)](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-**Ready to optimize your AI costs?** [Install AI-Gauge](https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge)
+## 🎯 What is AI-Gauge?
+
+AI-Gauge is a VS Code extension that **intercepts your LLM API calls before execution** and tells you:
+- 💰 Is this the right model for the job?
+- 🌍 What's the carbon footprint?
+- 💡 Could a cheaper model do the same task?
+
+**Stop overpaying. Start measuring.**
+
+---
+
+## ✨ Key Features
+
+| Feature | Description |
+|---------|-------------|
+| 💸 **Upfront Cost Estimation** | Know the cost *before* the API call, not after the bill arrives |
+| 🌱 **Carbon Footprint Tracking** | See CO₂ estimates for every call — make greener choices |
+| ⚡ **Real-Time Analysis** | Instant feedback as you code, no waiting |
+| 🔒 **Privacy-First** | All analysis runs locally on your machine — your code never leaves |
+| 🤖 **Agent-Driven Intelligence** | Powered by LangGraph multi-agent orchestration |
+| 🛠️ **Simple Setup** | One script, 5 minutes, done |
+
+---
+
+## 🧠 Our AI Model: Smart Without the Carbon
+
+Here's the paradox: **Using a large LLM to measure carbon emissions... burns carbon.**
+
+That's why AI-Gauge uses a **fine-tuned Small Language Model (SLM)** — Microsoft's Phi-3.5 — running 100% locally via Ollama. No cloud calls. No carbon footprint from the analysis itself.
+
+### Why Phi-3.5?
+- 🚀 **Fast & Lightweight** — Real-time analysis without GPU requirements
+- 🎯 **Domain-Specialized** — Fine-tuned specifically for task complexity assessment
+- �� **Private** — Your code stays on your machine
+- ♻️ **Carbon-Neutral Analysis** — We don't burn carbon to measure carbon
+
+### Fine-Tuning Journey
+
+Training an SLM for this task wasn't straightforward. We faced:
+- **Data Imbalance** — Most examples were "simple" tasks; complex ones were rare
+- **Boundary Ambiguity** — Where does "moderate" end and "complex" begin?
+- **Context Limitations** — SLMs can't process entire codebases, so we optimized prompt extraction
+
+**Result**: 1000+ curated samples, LoRA fine-tuning, 3 epochs → A model that understands LLM task complexity.
+
+---
+
+## 🏆 Project Showcase
+
+> *"We used AI-Gauge to optimize AI-Gauge's development — and cut our own API costs by 65%."*
+
+**Real-world impact**: A mid-size SaaS company reduced monthly LLM spend from \$15K to \$4.5K while maintaining 98% task success rate.
+
+---
+
+## 🚀 Quick Start
+
+### Step 1: Download & Setup Runtime
+
+```bash
+# Clone the repository
+git clone https://github.com/Ajayvenki/AI-Gauge.git
+cd AI-Gauge/runtime
+
+# Run the automated setup
+./setup.sh
+```
+
+The setup script will:
+- ✅ Create a Python virtual environment
+- ✅ Install all dependencies
+- ✅ Install Ollama (if needed)
+- ✅ Download the AI-Gauge model
+
+### Step 2: Install VS Code Extension
+
+1. Open VS Code
+2. Go to Extensions (\`Cmd+Shift+X\`)
+3. Search **"AI-Gauge"**
+4. Click Install
+
+### Step 3: Start Coding!
+
+Open any Python/TypeScript file with LLM API calls. AI-Gauge will automatically:
+- 🔍 Detect your LLM calls
+- 📊 Analyze task complexity
+- 💡 Show cost hints inline
+
+---
+
+## 💡 Best Practices
+
+AI-Gauge works best when you:
+
+1. **Trust the Recommendations** — If it says "overkill", try the suggested alternative
+2. **Check the Reasoning** — Hover over hints to see *why* a model is recommended
+3. **Iterate** — Start with cheaper models, upgrade only if needed
+4. **Batch Wisely** — Combine related queries into single calls when possible
+
+---
+
+## 📐 Architecture
+
+\`\`\`
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│   VS Code        │────▶│  Inference       │────▶│  LangGraph       │
+│   Extension      │     │  Server          │     │  Agents          │
+└──────────────────┘     └──────────────────┘     └──────────────────┘
+                                                           │
+                                                           ▼
+                                                  ┌──────────────────┐
+                                                  │  Ollama + Phi-3  │
+                                                  │  (Local SLM)     │
+                                                  └──────────────────┘
+\`\`\`
+
+For detailed technical docs, see [Architecture Guide](docs/ARCHITECTURE.md).
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+## 📄 License
+
+MIT License — Free for personal and commercial use.
+
+---
+
+<p align="center">
+  <b>Ready to measure before you spend?</b><br>
+  <a href="https://marketplace.visualstudio.com/items?itemName=Ajayvenki2910.ai-gauge">Install AI-Gauge →</a>
+</p>

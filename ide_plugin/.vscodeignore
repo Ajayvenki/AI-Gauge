@@ -1,0 +1,19 @@
+# Exclude development files from extension package
+out/**/*.d.ts
+out/**/*.js.map
+
+# Exclude source files (only include compiled output)
+src/
+node_modules/
+.git/
+.github/
+.vscode/
+*.ts
+!out/**/*.js
+
+# Exclude unnecessary files
+*.log
+*.md
+tsconfig.json
+package-lock.json
+.vscodeignore

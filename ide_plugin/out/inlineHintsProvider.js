@@ -80,12 +80,15 @@ class InlineHintsProvider {
      * Format the inline hint label
      */
     formatHintLabel(analysis) {
-        const cost = `$${analysis.currentModel.estimatedCostPer1k.toFixed(2)}/1k`;
-        const latency = analysis.currentModel.latencyTier;
+        const costValue = Number(analysis.currentModel?.estimatedCostPer1k) || 0;
+        const carbonValue = Number(analysis.currentCarbonGrams) || 0;
+        const cost = `$${costValue.toFixed(2)}/1k`;
+        const latency = analysis.currentModel?.latencyTier || 'unknown';
+        const carbon = `${carbonValue.toFixed(3)}g CO₂`;
         if (analysis.verdict === 'OVERKILL') {
-            return `  ⚠️ ${cost} • ${latency} → 💡 save ${analysis.costSavingsPercent}%`;
+            return `  ⚠️ ${cost} • ${carbon} → 💡 save ${analysis.costSavingsPercent || 0}%`;
         }
-        return `  ✓ ${cost} • ${latency}`;
+        return `  ✓ ${cost} • ${carbon}`;
     }
     /**
      * Format the hover tooltip
@@ -93,22 +96,33 @@ class InlineHintsProvider {
     formatTooltip(analysis) {
         const md = new vscode.MarkdownString();
         md.isTrusted = true;
+        const currentCost = Number(analysis.currentModel?.estimatedCostPer1k) || 0;
+        const currentCarbon = Number(analysis.currentCarbonGrams) || 0;
         md.appendMarkdown(`## AI-Gauge Analysis\n\n`);
         md.appendMarkdown(`**Verdict:** ${this.getVerdictEmoji(analysis.verdict)} ${analysis.verdict}\n\n`);
-        md.appendMarkdown(`**Confidence:** ${(analysis.confidence * 100).toFixed(0)}%\n\n`);
+        md.appendMarkdown(`**Confidence:** ${((analysis.confidence || 0) * 100).toFixed(0)}%\n\n`);
         md.appendMarkdown(`### Current Model\n`);
-        md.appendMarkdown(`- **Model:** ${analysis.currentModel.modelId}\n`);
-        md.appendMarkdown(`- **Cost:** $${analysis.currentModel.estimatedCostPer1k.toFixed(2)}/1k tokens\n`);
-        md.appendMarkdown(`- **Latency:** ${analysis.currentModel.latencyTier}\n\n`);
+        md.appendMarkdown(`- **Model:** ${analysis.currentModel?.modelId || 'unknown'}\n`);
+        md.appendMarkdown(`- **Cost:** $${currentCost.toFixed(2)}/1k tokens\n`);
+        md.appendMarkdown(`- **Latency:** ${analysis.currentModel?.latencyTier || 'unknown'}\n`);
+        md.appendMarkdown(`- **CO₂:** ${currentCarbon.toFixed(3)}g per call\n\n`);
         if (analysis.recommendedAlternative) {
+            const altCost = Number(analysis.recommendedAlternative?.estimatedCostPer1k) || 0;
+            const altCarbon = Number(analysis.alternativeCarbonGrams) || 0;
             md.appendMarkdown(`### Recommended Alternative\n`);
             md.appendMarkdown(`- **Model:** ${analysis.recommendedAlternative.modelId}\n`);
-            md.appendMarkdown(`- **Cost:** $${analysis.recommendedAlternative.estimatedCostPer1k.toFixed(2)}/1k tokens\n`);
-            md.appendMarkdown(`- **Latency:** ${analysis.recommendedAlternative.latencyTier}\n\n`);
+            md.appendMarkdown(`- **Cost:** $${altCost.toFixed(2)}/1k tokens\n`);
+            md.appendMarkdown(`- **Latency:** ${analysis.recommendedAlternative.latencyTier || 'unknown'}\n`);
+            if (analysis.alternativeCarbonGrams) {
+                md.appendMarkdown(`- **CO₂:** ${altCarbon.toFixed(3)}g per call\n\n`);
+            }
             md.appendMarkdown(`### Savings\n`);
-            md.appendMarkdown(`- **Cost:** ${analysis.costSavingsPercent}% reduction\n`);
+            md.appendMarkdown(`- **Cost:** ${analysis.costSavingsPercent || 0}% reduction\n`);
             if (analysis.latencySavingsMs > 0) {
                 md.appendMarkdown(`- **Latency:** ${analysis.latencySavingsMs}ms faster\n`);
+            }
+            if (analysis.carbonSavingsPercent > 0) {
+                md.appendMarkdown(`- **CO₂:** ${analysis.carbonSavingsPercent}% reduction\n`);
             }
         }
         if (analysis.reasoning) {

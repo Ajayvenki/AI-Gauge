@@ -216,3 +216,8 @@ training_data/models/
 
 # Project memory files (internal development notes)
 docs/MEMORY.md
+
+test_samples/
+archive/
+runtime/__pycache__/
+runtime/AI-Gauge.code-workspace

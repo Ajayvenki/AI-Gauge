@@ -75,11 +75,20 @@ export class DiagnosticsProvider implements vscode.Disposable {
             return `Model "${analysis.currentModel.modelId}" may be overkill for this task.`;
         }
 
-        return [
+        const parts = [
             `💡 Model "${analysis.currentModel.modelId}" may be overkill.`,
-            `Consider "${alt.modelId}" for ${analysis.costSavingsPercent}% cost savings.`,
-            analysis.latencySavingsMs > 0 ? `(${analysis.latencySavingsMs}ms faster)` : ''
-        ].filter(Boolean).join(' ');
+            `Consider "${alt.modelId}" for ${analysis.costSavingsPercent}% cost savings.`
+        ];
+
+        if (analysis.latencySavingsMs > 0) {
+            parts.push(`(${analysis.latencySavingsMs}ms faster)`);
+        }
+
+        if (analysis.carbonSavingsPercent > 0) {
+            parts.push(`🌱 ${analysis.carbonSavingsPercent}% less CO₂`);
+        }
+
+        return parts.join(' ');
     }
 
     dispose(): void {

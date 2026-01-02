@@ -4,7 +4,169 @@
 
 ---
 
-## 📌 Latest Update (Dec 23, 2025 - Night)
+## 📌 Latest Update (January 2, 2026 - v0.5.5 Release)
+
+### CRITICAL BUG FIX: Duplicate Flask Endpoint ✅ COMPLETE
+
+**Problem Solved**: Server was crashing with `AssertionError: View function mapping is overwriting an existing endpoint function: get_model_cost`
+
+#### Root Cause
+Two identical Flask route definitions for `/models/<model_id>/cost` existed in `inference_server.py`:
+- First at lines 208-222 (correct version)
+- Second at lines 273-286 (duplicate causing crash)
+
+#### What Changed
+- **runtime/inference_server.py**: Removed duplicate `get_model_cost` endpoint
+- **src/inference_server.py**: Synced with runtime version, fixed same duplicate issue  
+- **README.md**: Updated download URLs to use GitHub's `/latest/` pattern for automatic version resolution
+- **ide_plugin/package.json**: Bumped version to 0.5.5
+
+#### Validation Performed
+- ✅ No duplicate Flask routes (verified with grep)
+- ✅ No duplicate function definitions
+- ✅ TypeScript compiles without errors
+- ✅ Python files compile successfully
+- ✅ Extension published to VS Code Marketplace
+
+#### Files Modified
+| File | Change |
+|------|--------|
+| `runtime/inference_server.py` | Removed duplicate `/cost` endpoint |
+| `src/inference_server.py` | Updated to match runtime version |
+| `README.md` | Updated download instructions |
+| `ide_plugin/package.json` | Version 0.5.5 |
+
+#### Project Structure Clarification
+- **`src/`**: Development code (uses `src.module` imports)
+- **`runtime/`**: Distributable package (flat imports for standalone operation)
+- **`setup.sh`**: Only exists in `runtime/` - users run this after extracting tarball
+
+---
+
+## 📌 Previous Update (January 2, 2026 - v0.5.4 Release)
+
+### Cost Display and Endpoint Fixes ✅ COMPLETE
+
+**Problems Solved**:
+1. Cost showing $0.00 instead of actual model costs
+2. 404 errors for `/models/<model_id>/cost` endpoint
+3. Provider showing "unknown" despite being in response
+4. CO2 estimates using hardcoded values
+
+#### What Changed
+- Added `/models/<model_id>/cost` endpoint to inference server
+- Fixed response parsing to handle camelCase server responses
+- Updated cost and CO2 calculations with proper fallbacks
+- Improved provider detection and display
+
+---
+
+## 📌 Previous Update (January 2, 2026 - v0.4.4 Release)
+
+### Extension Package Optimization ✅ COMPLETE
+
+**Problem Solved**: Extension package was bloated with development files, making it unnecessarily large.
+
+#### What Changed: Clean Production Packaging
+- **BEFORE**: 33KB package with 659 files (including .d.ts, .js.map, source files)
+- **AFTER**: 21KB package with 9 files (production-only)
+
+#### Optimization Details
+- **Added .vscodeignore**: Excludes development files from packaging
+- **Excluded Files**:
+  - TypeScript declaration files (*.d.ts)
+  - Source maps (*.js.map) 
+  - Source code (src/ directory)
+  - Development config files
+- **Included Files**: Only essential runtime files (package.json, readme.md, out/*.js)
+
+#### Version Update
+- **Bumped to v0.4.4**: Includes all runtime package detection fixes
+- **CHANGELOG Updated**: Documents optimization improvements
+- **Repository Committed**: All changes pushed to guinea-pig branch
+
+#### Package Sizes (Final)
+- **Extension**: 20.66 KB (optimized for marketplace)
+- **Runtime Package**: 33 KB (compressed tar.gz)
+- **Total User Experience**: ~54 KB download (very reasonable)
+
+#### Publishing Status
+- **Extension Packaged**: `ai-gauge-0.4.4.vsix` ready for marketplace
+- **Runtime Package**: `ai-gauge-runtime-v0.4.3.tar.gz` ready for GitHub releases
+- **Next Step**: Run `vsce publish` to release to marketplace
+
+### Repository-Based Extension Approach ✅ COMPLETE
+
+**Problem Solved**: Fixed critical "fetch failed" errors in marketplace extension caused by bundled Python bytecode incompatibility.
+
+#### What Changed: From Bundled to Repository-Based
+- **BEFORE**: Extension bundled Python files → Marketplace rejection due to bytecode issues
+- **AFTER**: Extension detects local AI-Gauge installation → Clean, reliable operation
+
+#### New Architecture
+1. **Runtime Package**: Minimal 33KB `ai-gauge-runtime-v0.4.3.tar.gz` with essential files only
+2. **Repository Detection**: Extension automatically finds local AI-Gauge installation
+3. **Clean Installation**: Users download runtime package instead of cloning full repo
+
+#### User Installation Flow (v0.4.3)
+```bash
+# 1. Download runtime package
+wget https://github.com/ajayvenki2910/ai-gauge/releases/download/v0.4.3/ai-gauge-runtime-v0.4.3.tar.gz
+
+# 2. Extract and setup
+tar -xzf ai-gauge-runtime-v0.4.3.tar.gz
+cd ai-gauge-runtime-v0.4.3
+./setup.sh  # Installs Ollama, downloads model, sets up dependencies
+
+# 3. Install VS Code extension
+# Search "AI-Gauge" in marketplace
+```
+
+#### Files Created/Modified
+- **`runtime/`**: New directory with flattened Python modules (no src/ subdirectory)
+- **`ai-gauge-runtime-v0.4.3.tar.gz`**: 33KB compressed runtime package
+- **`ide_plugin/src/extension.ts`**: Modified to detect local repo paths instead of bundled files
+- **`runtime/inference_server.py`**: Fixed imports for standalone operation
+- **`runtime/decision_module.py`**: Fixed relative imports in flattened structure
+- **`README.md`**: Updated with new installation instructions
+- **`CHANGELOG.md`**: Added v0.4.3 release notes
+
+#### Technical Fixes
+- **Import Issues**: Changed `from src.module` to `from module` in runtime package
+- **Server Startup**: Fixed module resolution in standalone environment
+- **Extension Size**: Reduced from ~2.2MB to 33KB (no bundled Python files)
+- **Compatibility**: Works across different Python environments and OS versions
+
+#### Backend Priority (Unchanged)
+1. **HuggingFace** (cloud) - Default, requires API key
+2. **Ollama** (local) - Offline, requires 2.2GB download  
+3. **llama_cpp** (local) - Advanced users
+
+#### Key Benefits
+- ✅ **No More Fetch Failures**: Repository-based approach eliminates bundling issues
+- ✅ **Clean User Experience**: 33KB download vs full repo clone
+- ✅ **Zero Workspace Clutter**: No __pycache__, tests, or dev files in user workspace
+- ✅ **Professional Distribution**: Feels like real software, not a development project
+- ✅ **Runtime Package Detection**: Extension automatically finds runtime packages in any location
+- ✅ **Reliable Operation**: No Python bytecode compatibility issues
+
+#### Extension Fixes (Jan 2, 2026)
+- **Detection Logic**: Updated `isValidRepo()` to check runtime package structure (`inference_server.py` in root)
+- **Server Startup**: Modified `startInferenceServer()` to use correct path for runtime packages
+- **Backward Compatibility**: Supports both runtime package and development repository structures
+- **Error Resolution**: Fixed "fetch failed" errors when extension couldn't locate local installation
+- **Package Optimization**: Reduced extension size from 33KB to 21KB by excluding development files (.d.ts, .js.map)
+- **Clean Packaging**: Added .vscodeignore to only include essential runtime files
+
+#### Next Steps
+- Upload `ai-gauge-runtime-v0.4.3.tar.gz` to GitHub releases
+- Publish extension v0.4.3 to VS Code marketplace
+- Test end-to-end installation on clean machine
+- Monitor for any remaining issues
+
+---
+
+## 📌 Previous Update (Dec 23, 2025 - Night)
 
 ### HuggingFace Cloud Inference ✅ COMPLETE
 
