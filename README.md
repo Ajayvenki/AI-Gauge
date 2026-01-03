@@ -169,6 +169,8 @@ This approach demonstrates a well-planned architecture, balancing prototype feas
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 https://github.com/user-attachments/assets/75332fbb-5da4-4c6a-bab2-54713aee5789
+![Screenshot_AiGauge](https://github.com/user-attachments/assets/c8e0ba3d-c5e2-403a-acfc-d5614dafa2c3)
+
 
 ## License
 
