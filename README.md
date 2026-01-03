@@ -170,12 +170,9 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 
 
 
-Uploading Short_Video_AIGauge.MP4…
 
+https://github.com/user-attachments/assets/49bda964-e096-4a9c-bc35-5801e39a1e77
 
-
-
-![Screenshot_AiGauge](https://github.com/user-attachments/assets/c8e0ba3d-c5e2-403a-acfc-d5614dafa2c3)
 
 
 ## License
