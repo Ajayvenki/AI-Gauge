@@ -166,8 +166,9 @@ For production-ready use cases, consider these alternatives:
 This approach demonstrates a well-planned architecture, balancing prototype feasibility with future scalability.
 
 ## Contributing
-
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+https://github.com/user-attachments/assets/75332fbb-5da4-4c6a-bab2-54713aee5789
 
 ## License
 
